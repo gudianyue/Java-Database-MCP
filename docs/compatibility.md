@@ -11,6 +11,8 @@
 - `explain_query`
 - `get_top_queries`
 - `analyze_db_health`
+- `analyze_workload_indexes`
+- `analyze_query_indexes`
 
 ## 已知细微差异
 
@@ -24,6 +26,9 @@
 - `analyze_db_health` 保留 `index`、`connection`、`vacuum`、`sequence`、`replication`、`buffer`、`constraint`、`all` 类型和逗号组合输入。
 - `analyze_db_health` 当前以 Java 服务内的只读 SQL 检查实现主要健康信号；索引膨胀检查先报告超过 100MB 的大索引，而不是完全复刻 Python 版本的 btree 膨胀估算公式。
 - `analyze_db_health` 的单项检查如果遇到权限或版本问题，会在该检查项中返回“检查失败”说明，其他已请求检查仍继续执行。
+- `analyze_workload_indexes` 和 `analyze_query_indexes` 保留 `max_index_size_mb` 与 `method` 参数；当前 Java 版本实现 `method='dta'`，`method='llm'` 保留入口并返回暂未接入说明。
+- Java DTA 使用 PostgreSQL `EXPLAIN (FORMAT JSON)`、`pg_catalog`、`information_schema` 和 HypoPG 评估候选索引，不逐行复刻 Python 版本基于 `pglast` 的候选生成与贪心枚举。
+- Java DTA 先推荐单列 btree 索引，过滤已有简单索引、长文本/JSON/bytea 列，并按 HypoPG 评估后的成本改善排序。
 
 ## 兼容性规则
 

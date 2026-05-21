@@ -15,8 +15,11 @@
   - `get_top_queries`
 - 阶段 C：数据库健康检查工具
   - `analyze_db_health`
+- 阶段 D：索引调优工具
+  - `analyze_workload_indexes`
+  - `analyze_query_indexes`
 
-后续阶段会继续加入索引调优和依赖 LLM 的能力。
+后续阶段会继续加入依赖 LLM 的能力。
 
 ## 配置
 

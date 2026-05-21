@@ -25,7 +25,9 @@ class PostgresToolFacadeAnnotationTest {
             "get_object_details",
             "explain_query",
             "get_top_queries",
-            "analyze_db_health"
+            "analyze_db_health",
+            "analyze_workload_indexes",
+            "analyze_query_indexes"
         );
     }
 }

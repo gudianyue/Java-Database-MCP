@@ -2,6 +2,7 @@ package dev.postgresmcp.mcp;
 
 import dev.postgresmcp.diagnostics.DatabaseHealthService;
 import dev.postgresmcp.diagnostics.ExplainPlanService;
+import dev.postgresmcp.diagnostics.IndexAdvisorService;
 import dev.postgresmcp.diagnostics.TopQueriesService;
 import dev.postgresmcp.schema.SchemaIntrospectionService;
 import dev.postgresmcp.sql.SqlClient;
@@ -19,6 +20,7 @@ public class PostgresToolFacade {
     private final ExplainPlanService explainPlanService;
     private final TopQueriesService topQueriesService;
     private final DatabaseHealthService databaseHealthService;
+    private final IndexAdvisorService indexAdvisorService;
     private final ToolResponseMapper mapper;
 
     public PostgresToolFacade(
@@ -27,6 +29,7 @@ public class PostgresToolFacade {
         ExplainPlanService explainPlanService,
         TopQueriesService topQueriesService,
         DatabaseHealthService databaseHealthService,
+        IndexAdvisorService indexAdvisorService,
         ToolResponseMapper mapper
     ) {
         this.schemaService = schemaService;
@@ -34,6 +37,7 @@ public class PostgresToolFacade {
         this.explainPlanService = explainPlanService;
         this.topQueriesService = topQueriesService;
         this.databaseHealthService = databaseHealthService;
+        this.indexAdvisorService = indexAdvisorService;
         this.mapper = mapper;
     }
 
@@ -112,6 +116,31 @@ public class PostgresToolFacade {
     ) {
         try {
             return databaseHealthService.analyze(healthType == null || healthType.isBlank() ? "all" : healthType);
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "analyze_workload_indexes", description = "分析数据库工作负载并推荐索引")
+    public String analyzeWorkloadIndexes(
+        @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
+        @McpToolParam(description = "分析方法：'dta' 或 'llm'；当前 Java 版本优先实现 dta") String method
+    ) {
+        try {
+            return indexAdvisorService.analyzeWorkloadIndexes(maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "analyze_query_indexes", description = "分析最多 10 条 SQL 查询并推荐索引")
+    public String analyzeQueryIndexes(
+        @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
+        @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
+        @McpToolParam(description = "分析方法：'dta' 或 'llm'；当前 Java 版本优先实现 dta") String method
+    ) {
+        try {
+            return indexAdvisorService.analyzeQueryIndexes(queries, maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
         } catch (Exception e) {
             return mapper.error(e);
         }
