@@ -9,7 +9,13 @@ spring:
         name: postgres-mcp
         version: 0.1.0
         type: sync
+        protocol: sse
+        stdio: ${MCP_STDIO_ENABLED:false}
         instructions: 提供数据库结构查看和受控 SQL 执行能力的 PostgreSQL MCP 服务。
+
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:8080}
 
 postgres-mcp:
   access-mode: unrestricted
