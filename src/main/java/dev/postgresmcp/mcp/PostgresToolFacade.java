@@ -1,0 +1,103 @@
+package dev.postgresmcp.mcp;
+
+import dev.postgresmcp.diagnostics.ExplainPlanService;
+import dev.postgresmcp.diagnostics.TopQueriesService;
+import dev.postgresmcp.schema.SchemaIntrospectionService;
+import dev.postgresmcp.sql.SqlClient;
+import java.util.List;
+import java.util.Map;
+import org.springaicommunity.mcp.annotation.McpTool;
+import org.springaicommunity.mcp.annotation.McpToolParam;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PostgresToolFacade {
+
+    private final SchemaIntrospectionService schemaService;
+    private final SqlClient sqlClient;
+    private final ExplainPlanService explainPlanService;
+    private final TopQueriesService topQueriesService;
+    private final ToolResponseMapper mapper;
+
+    public PostgresToolFacade(
+        SchemaIntrospectionService schemaService,
+        SqlClient sqlClient,
+        ExplainPlanService explainPlanService,
+        TopQueriesService topQueriesService,
+        ToolResponseMapper mapper
+    ) {
+        this.schemaService = schemaService;
+        this.sqlClient = sqlClient;
+        this.explainPlanService = explainPlanService;
+        this.topQueriesService = topQueriesService;
+        this.mapper = mapper;
+    }
+
+    @McpTool(name = "list_schemas", description = "列出数据库中的所有 schema")
+    public String listSchemas() {
+        try {
+            return mapper.toText(schemaService.listSchemas());
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "list_objects", description = "列出指定 schema 下的对象")
+    public String listObjects(
+        @McpToolParam(description = "Schema 名称") String schemaName,
+        @McpToolParam(description = "对象类型：'table'、'view'、'sequence' 或 'extension'") String objectType
+    ) {
+        try {
+            return mapper.toText(schemaService.listObjects(schemaName, objectType == null || objectType.isBlank() ? "table" : objectType));
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "get_object_details", description = "查看数据库对象的详细信息")
+    public String getObjectDetails(
+        @McpToolParam(description = "Schema 名称") String schemaName,
+        @McpToolParam(description = "对象名称") String objectName,
+        @McpToolParam(description = "对象类型：'table'、'view'、'sequence' 或 'extension'") String objectType
+    ) {
+        try {
+            return mapper.toText(schemaService.getObjectDetails(schemaName, objectName, objectType == null || objectType.isBlank() ? "table" : objectType));
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "execute_sql", description = "按照配置的访问模式执行 SQL")
+    public String executeSql(@McpToolParam(description = "要执行的 SQL") String sql) {
+        try {
+            return mapper.toText(sqlClient.query(sql));
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "explain_query", description = "查看 SQL 查询的执行计划和成本估算")
+    public String explainQuery(
+        @McpToolParam(description = "要解释的 SQL 查询") String sql,
+        @McpToolParam(description = "为 true 时实际执行查询并返回真实执行统计；默认 false") Boolean analyze,
+        @McpToolParam(description = "要模拟的假设索引列表；没有假设索引时传空列表") List<Map<String, Object>> hypotheticalIndexes
+    ) {
+        try {
+            return explainPlanService.explain(sql, Boolean.TRUE.equals(analyze), hypotheticalIndexes);
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "get_top_queries", description = "基于 pg_stat_statements 报告慢查询或资源消耗较高的查询")
+    public String getTopQueries(
+        @McpToolParam(description = "排序条件：'resources'、'mean_time' 或 'total_time'；默认 resources") String sortBy,
+        @McpToolParam(description = "按 mean_time 或 total_time 排序时返回的查询数量；默认 10") Integer limit
+    ) {
+        try {
+            return topQueriesService.getTopQueries(sortBy, limit == null ? 10 : limit);
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+}

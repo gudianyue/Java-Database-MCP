@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: postgres-mcp-java
+  main:
+    banner-mode: off
+  ai:
+    mcp:
+      server:
+        name: postgres-mcp
+        version: 0.1.0
+        type: sync
+        instructions: 提供数据库结构查看和受控 SQL 执行能力的 PostgreSQL MCP 服务。
+
+postgres-mcp:
+  access-mode: unrestricted
+  restricted-timeout-seconds: 30
+  maximum-pool-size: 5
