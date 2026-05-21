@@ -113,12 +113,18 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
     }
 
     private HikariDataSource createDataSource() {
-        String databaseUri = properties.getDatabaseUri();
-        if (databaseUri == null || databaseUri.isBlank()) {
-            throw new IllegalStateException("数据库连接地址未配置。请设置 DATABASE_URI 或 postgres-mcp.database-uri。");
+        String jdbcUrl = properties.resolvedJdbcUrl();
+        if (jdbcUrl == null || jdbcUrl.isBlank()) {
+            throw new IllegalStateException("数据库连接未配置。请设置 DATABASE_URI，或设置 POSTGRES_HOST、POSTGRES_DATABASE、POSTGRES_USERNAME、POSTGRES_PASSWORD。");
         }
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(databaseUri);
+        config.setJdbcUrl(jdbcUrl);
+        if (properties.getDatabaseUsername() != null && !properties.getDatabaseUsername().isBlank()) {
+            config.setUsername(properties.getDatabaseUsername());
+        }
+        if (properties.getDatabasePassword() != null && !properties.getDatabasePassword().isBlank()) {
+            config.setPassword(properties.getDatabasePassword());
+        }
         config.setMaximumPoolSize(properties.getMaximumPoolSize());
         config.setPoolName("postgres-mcp");
         return new HikariDataSource(config);

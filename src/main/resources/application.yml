@@ -15,3 +15,9 @@ postgres-mcp:
   access-mode: unrestricted
   restricted-timeout-seconds: 30
   maximum-pool-size: 5
+  database-uri: ${DATABASE_URI:}
+  database-host: ${POSTGRES_HOST:}
+  database-port: ${POSTGRES_PORT:5432}
+  database-name: ${POSTGRES_DATABASE:${POSTGRES_DB:}}
+  database-username: ${POSTGRES_USERNAME:${POSTGRES_USER:}}
+  database-password: ${POSTGRES_PASSWORD:}

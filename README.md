@@ -23,7 +23,7 @@
 
 ## 配置
 
-数据库连接地址可以通过环境变量配置：
+数据库连接可以通过完整 JDBC URL 配置：
 
 ```bash
 DATABASE_URI=jdbc:postgresql://localhost:5432/postgres
@@ -35,6 +35,29 @@ DATABASE_URI=jdbc:postgresql://localhost:5432/postgres
 postgres-mcp:
   database-uri: jdbc:postgresql://localhost:5432/postgres
 ```
+
+也可以拆分为主机、端口、库名、用户名和密码：
+
+```bash
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DATABASE=postgres
+POSTGRES_USERNAME=postgres
+POSTGRES_PASSWORD=postgres
+```
+
+对应 Spring 配置：
+
+```yaml
+postgres-mcp:
+  database-host: localhost
+  database-port: 5432
+  database-name: postgres
+  database-username: postgres
+  database-password: postgres
+```
+
+如果同时配置了 `DATABASE_URI` 和拆分连接参数，会优先使用 `DATABASE_URI`。
 
 访问模式配置示例：
 
@@ -48,6 +71,42 @@ postgres-mcp:
 ```bash
 mvn test
 mvn -DskipTests package
+```
+
+## Docker 部署
+
+构建镜像：
+
+```bash
+docker build -t postgres-mcp-java .
+```
+
+使用完整 JDBC URL 运行：
+
+```bash
+docker run --rm -i \
+  -e DATABASE_URI=jdbc:postgresql://host.docker.internal:5432/postgres \
+  -e POSTGRES_USERNAME=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  postgres-mcp-java
+```
+
+使用用户名和密码拆分配置运行：
+
+```bash
+docker run --rm -i \
+  -e POSTGRES_HOST=host.docker.internal \
+  -e POSTGRES_PORT=5432 \
+  -e POSTGRES_DATABASE=postgres \
+  -e POSTGRES_USERNAME=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  postgres-mcp-java
+```
+
+本仓库也提供 `docker-compose.yml`，用于本地启动一个 PostgreSQL 和 MCP 服务示例：
+
+```bash
+docker compose up --build
 ```
 
 ## 测试说明

@@ -1,0 +1,12 @@
+target/
+.git/
+.omx/
+
+*.log
+.idea/
+*.iml
+.vscode/
+
+README.md
+docs/
+THIRD_PARTY_NOTICES.md
