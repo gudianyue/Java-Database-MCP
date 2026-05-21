@@ -48,3 +48,9 @@ mvn -DskipTests package
 ## 测试说明
 
 `mvn test` 会运行单元测试和 MCP 注解可见性测试。PostgreSQL 集成测试使用 Testcontainers；如果本机 Docker daemon 不可用，该集成测试会自动跳过，并在日志中保留原因。
+
+## 开源协议
+
+本项目使用 [MIT License](LICENSE)。
+
+本项目是基于 `crystaldba/postgres-mcp` 的 Java 重新实现与架构迁移。原始项目同样使用 MIT License，相关版权与许可声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

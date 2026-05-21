@@ -17,6 +17,14 @@
     <name>postgres-mcp-java</name>
     <description>PostgreSQL MCP 服务的 Java 架构实现</description>
 
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit/</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.1.0</spring-ai.version>
