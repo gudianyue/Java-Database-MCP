@@ -63,15 +63,17 @@ MCP_STDIO_ENABLED=true
 数据库连接可以通过完整 JDBC URL 配置：
 
 ```bash
-DATABASE_URI=jdbc:postgresql://localhost:5432/postgres
+DATABASE_URI=jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres
 ```
 
 也可以通过 Spring 配置文件配置：
 
 ```yaml
 postgres-mcp:
-  database-uri: jdbc:postgresql://localhost:5432/postgres
+  database-uri: jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres
 ```
+
+如果用户名或密码包含特殊字符，请按 URL 参数规则进行编码。
 
 也可以拆分为主机、端口、库名、用户名和密码：
 
@@ -125,9 +127,7 @@ docker run --rm -i \
   -p 127.0.0.1:8000:8000 \
   -e SERVER_ADDRESS=0.0.0.0 \
   -e SERVER_PORT=8000 \
-  -e DATABASE_URI=jdbc:postgresql://host.docker.internal:5432/postgres \
-  -e POSTGRES_USERNAME=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e "DATABASE_URI=jdbc:postgresql://host.docker.internal:5432/postgres?user=postgres&password=postgres" \
   postgres-mcp-java
 ```
 
