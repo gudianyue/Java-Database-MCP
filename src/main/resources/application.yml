@@ -15,7 +15,7 @@ spring:
 
 server:
   address: ${SERVER_ADDRESS:127.0.0.1}
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:8000}
 
 postgres-mcp:
   access-mode: unrestricted

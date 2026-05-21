@@ -12,5 +12,5 @@ RUN useradd --system --create-home --uid 10001 appuser
 COPY --from=build /workspace/target/postgres-mcp-java-0.1.0-SNAPSHOT.jar /app/postgres-mcp-java.jar
 
 USER appuser
-EXPOSE 8080
+EXPOSE 8000
 ENTRYPOINT ["java", "-jar", "/app/postgres-mcp-java.jar"]
