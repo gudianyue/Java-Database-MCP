@@ -14,18 +14,30 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class JdbcSqlClient implements SqlClient, AutoCloseable {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(JdbcSqlClient.class);
+
     private final PostgresMcpProperties properties;
     private final RestrictedSqlGuard restrictedSqlGuard;
-    private volatile HikariDataSource dataSource;
+    private volatile DataSource dataSource;
 
+    @Autowired
     public JdbcSqlClient(PostgresMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard) {
         this.properties = properties;
         this.restrictedSqlGuard = restrictedSqlGuard;
+    }
+
+    JdbcSqlClient(PostgresMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard, DataSource dataSource) {
+        this.properties = properties;
+        this.restrictedSqlGuard = restrictedSqlGuard;
+        this.dataSource = dataSource;
     }
 
     @Override
@@ -38,15 +50,26 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
         if (properties.getAccessMode() == SqlAccessMode.RESTRICTED) {
             restrictedSqlGuard.validate(sql);
         }
+        List<?> effectiveParams = params == null ? List.of() : params;
+        long startedAt = System.nanoTime();
+        LOGGER.info("SQL 执行开始：sql={}, params={}", sql, effectiveParams);
         try (Connection connection = dataSource().getConnection()) {
             boolean readOnly = properties.getAccessMode() == SqlAccessMode.RESTRICTED;
             connection.setReadOnly(readOnly);
-            if (params == null || params.isEmpty()) {
-                return executeStatement(connection, sql, readOnly);
+            QueryResult result;
+            if (effectiveParams.isEmpty()) {
+                result = executeStatement(connection, sql, readOnly);
+            } else {
+                result = executePreparedStatement(connection, sql, effectiveParams, readOnly);
             }
-            return executePreparedStatement(connection, sql, params, readOnly);
+            LOGGER.info("SQL 执行完成：status=success, elapsedMs={}, rowCount={}", elapsedMillis(startedAt), result.rows().size());
+            return result;
         } catch (SQLException e) {
+            LOGGER.info("SQL 执行完成：status=failure, elapsedMs={}, error={}", elapsedMillis(startedAt), SecretMasker.mask(e.getMessage()));
             throw new IllegalStateException(SecretMasker.mask(e.getMessage()), e);
+        } catch (RuntimeException e) {
+            LOGGER.info("SQL 执行完成：status=failure, elapsedMs={}, error={}", elapsedMillis(startedAt), SecretMasker.mask(e.getMessage()));
+            throw e;
         }
     }
 
@@ -100,7 +123,7 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
     }
 
     private DataSource dataSource() {
-        HikariDataSource current = dataSource;
+        DataSource current = dataSource;
         if (current != null) {
             return current;
         }
@@ -110,6 +133,10 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
             }
             return dataSource;
         }
+    }
+
+    private static long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private HikariDataSource createDataSource() {
@@ -132,9 +159,13 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
 
     @Override
     public void close() {
-        HikariDataSource current = dataSource;
-        if (current != null) {
-            current.close();
+        DataSource current = dataSource;
+        if (current instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                throw new IllegalStateException("关闭数据库连接池失败。", e);
+            }
         }
     }
 }
