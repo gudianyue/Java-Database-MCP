@@ -13,8 +13,10 @@
 - 阶段 B：性能诊断工具
   - `explain_query`
   - `get_top_queries`
+- 阶段 C：数据库健康检查工具
+  - `analyze_db_health`
 
-后续阶段会继续加入数据库健康检查、索引调优和依赖 LLM 的能力。
+后续阶段会继续加入索引调优和依赖 LLM 的能力。
 
 ## 配置
 

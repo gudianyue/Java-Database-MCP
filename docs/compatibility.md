@@ -10,6 +10,7 @@
 - `execute_sql`
 - `explain_query`
 - `get_top_queries`
+- `analyze_db_health`
 
 ## 已知细微差异
 
@@ -20,6 +21,9 @@
 - `explain_query` 的假设索引使用 `hypopg_create_index(?)` 参数化传入索引定义，并对表名、列名和索引方法做 Java 侧校验。
 - `explain_query` 在 `analyze=true` 时拒绝执行以 `INSERT`、`UPDATE`、`DELETE`、`MERGE`、`COPY`、`CALL` 开头的目标 SQL，避免通过执行计划工具触发写入语句。
 - `get_top_queries` 保留 `resources`、`mean_time`、`total_time` 三种排序入口，并兼容 PostgreSQL 12 与 13+ 的 `pg_stat_statements` 时间列差异。
+- `analyze_db_health` 保留 `index`、`connection`、`vacuum`、`sequence`、`replication`、`buffer`、`constraint`、`all` 类型和逗号组合输入。
+- `analyze_db_health` 当前以 Java 服务内的只读 SQL 检查实现主要健康信号；索引膨胀检查先报告超过 100MB 的大索引，而不是完全复刻 Python 版本的 btree 膨胀估算公式。
+- `analyze_db_health` 的单项检查如果遇到权限或版本问题，会在该检查项中返回“检查失败”说明，其他已请求检查仍继续执行。
 
 ## 兼容性规则
 

@@ -1,5 +1,6 @@
 package dev.postgresmcp.mcp;
 
+import dev.postgresmcp.diagnostics.DatabaseHealthService;
 import dev.postgresmcp.diagnostics.ExplainPlanService;
 import dev.postgresmcp.diagnostics.TopQueriesService;
 import dev.postgresmcp.schema.SchemaIntrospectionService;
@@ -17,6 +18,7 @@ public class PostgresToolFacade {
     private final SqlClient sqlClient;
     private final ExplainPlanService explainPlanService;
     private final TopQueriesService topQueriesService;
+    private final DatabaseHealthService databaseHealthService;
     private final ToolResponseMapper mapper;
 
     public PostgresToolFacade(
@@ -24,12 +26,14 @@ public class PostgresToolFacade {
         SqlClient sqlClient,
         ExplainPlanService explainPlanService,
         TopQueriesService topQueriesService,
+        DatabaseHealthService databaseHealthService,
         ToolResponseMapper mapper
     ) {
         this.schemaService = schemaService;
         this.sqlClient = sqlClient;
         this.explainPlanService = explainPlanService;
         this.topQueriesService = topQueriesService;
+        this.databaseHealthService = databaseHealthService;
         this.mapper = mapper;
     }
 
@@ -96,6 +100,18 @@ public class PostgresToolFacade {
     ) {
         try {
             return topQueriesService.getTopQueries(sortBy, limit == null ? 10 : limit);
+        } catch (Exception e) {
+            return mapper.error(e);
+        }
+    }
+
+    @McpTool(name = "analyze_db_health", description = "分析数据库健康状态，可检查索引、连接、vacuum、序列、复制、缓冲区和约束")
+    public String analyzeDbHealth(
+        @McpToolParam(description = "健康检查类型：index、connection、vacuum、sequence、replication、buffer、constraint、all；可用逗号组合，默认 all")
+        String healthType
+    ) {
+        try {
+            return databaseHealthService.analyze(healthType == null || healthType.isBlank() ? "all" : healthType);
         } catch (Exception e) {
             return mapper.error(e);
         }

@@ -24,7 +24,8 @@ class PostgresToolFacadeAnnotationTest {
             "list_objects",
             "get_object_details",
             "explain_query",
-            "get_top_queries"
+            "get_top_queries",
+            "analyze_db_health"
         );
     }
 }
