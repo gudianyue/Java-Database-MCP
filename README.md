@@ -1,4 +1,4 @@
-# Postgres MCP Java
+# Database MCP Java
 
 这是 PostgreSQL MCP 服务的 Java 21 / Spring Boot / Maven 实现线。
 
@@ -121,7 +121,7 @@ mvn -DskipTests package
 构建镜像：
 
 ```bash
-docker build -t postgres-mcp-java .
+docker build -t database-mcp-java .
 ```
 
 使用完整 JDBC URL 运行：
@@ -132,7 +132,7 @@ docker run --rm -i \
   -e SERVER_ADDRESS=0.0.0.0 \
   -e SERVER_PORT=8000 \
   -e "DATABASE_URI=jdbc:postgresql://host.docker.internal:5432/postgres?user=postgres&password=postgres" \
-  postgres-mcp-java
+  database-mcp-java
 ```
 
 使用用户名和密码拆分配置运行：
@@ -147,7 +147,7 @@ docker run --rm -i \
   -e POSTGRES_DATABASE=postgres \
   -e POSTGRES_USERNAME=postgres \
   -e POSTGRES_PASSWORD=postgres \
-  postgres-mcp-java
+  database-mcp-java
 ```
 
 本仓库也提供 `docker-compose.yml`，用于本地启动一个 PostgreSQL 和 MCP 服务示例：

@@ -9,8 +9,8 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 
 RUN useradd --system --create-home --uid 10001 appuser
-COPY --from=build /workspace/target/postgres-mcp-java-0.1.0-SNAPSHOT.jar /app/postgres-mcp-java.jar
+COPY --from=build /workspace/target/database-mcp-java-0.1.0-SNAPSHOT.jar /app/database-mcp-java.jar
 
 USER appuser
 EXPOSE 8000
-ENTRYPOINT ["java", "-jar", "/app/postgres-mcp-java.jar"]
+ENTRYPOINT ["java", "-jar", "/app/database-mcp-java.jar"]
