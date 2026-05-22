@@ -6,7 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import dev.databasemcp.config.PostgresMcpProperties;
+import dev.databasemcp.config.DatabaseMcpProperties;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -40,7 +40,7 @@ class JdbcSqlClientLoggingTest {
         when(resultSet.next()).thenReturn(true, false);
         when(resultSet.getObject(1)).thenReturn("Alice");
 
-        JdbcSqlClient client = new JdbcSqlClient(new PostgresMcpProperties(), new RestrictedSqlGuard(), dataSource);
+        JdbcSqlClient client = new JdbcSqlClient(new DatabaseMcpProperties(), new RestrictedSqlGuard(), dataSource);
 
         QueryResult result = client.query(sql, List.of("Alice"));
 
@@ -56,7 +56,7 @@ class JdbcSqlClientLoggingTest {
         String sql = "SELECT * FROM users WHERE password = ?";
         DataSource dataSource = mock(DataSource.class);
         when(dataSource.getConnection()).thenThrow(new SQLException("连接失败 password=secret"));
-        JdbcSqlClient client = new JdbcSqlClient(new PostgresMcpProperties(), new RestrictedSqlGuard(), dataSource);
+        JdbcSqlClient client = new JdbcSqlClient(new DatabaseMcpProperties(), new RestrictedSqlGuard(), dataSource);
 
         assertThatThrownBy(() -> client.query(sql, List.of("secret")))
             .isInstanceOf(IllegalStateException.class)

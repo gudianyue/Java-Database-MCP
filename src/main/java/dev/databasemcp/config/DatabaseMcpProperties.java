@@ -4,12 +4,13 @@ import dev.databasemcp.sql.SqlAccessMode;
 import java.util.Optional;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "postgres-mcp")
-public class PostgresMcpProperties {
+@ConfigurationProperties(prefix = "database-mcp")
+public class DatabaseMcpProperties {
 
+    private DatabaseType databaseType = DatabaseType.POSTGRESQL;
     private String databaseUri;
     private String databaseHost;
-    private int databasePort = 5432;
+    private Integer databasePort;
     private String databaseName;
     private String databaseUsername;
     private String databasePassword;
@@ -19,9 +20,13 @@ public class PostgresMcpProperties {
 
     public String getDatabaseUri() {
         if (databaseUri == null || databaseUri.isBlank()) {
-            return System.getenv("DATABASE_URI");
+            return databaseUriEnvironmentVariable();
         }
         return databaseUri;
+    }
+
+    protected String databaseUriEnvironmentVariable() {
+        return System.getenv("DATABASE_URI");
     }
 
     public void setDatabaseUri(String databaseUri) {
@@ -38,7 +43,15 @@ public class PostgresMcpProperties {
         if (!hasText(host) || !hasText(database)) {
             return "";
         }
-        return "jdbc:postgresql://" + host + ":" + getDatabasePort() + "/" + database;
+        return databaseType.jdbcPrefix() + host + ":" + getDatabasePort() + "/" + database;
+    }
+
+    public DatabaseType getDatabaseType() {
+        return databaseType;
+    }
+
+    public void setDatabaseType(DatabaseType databaseType) {
+        this.databaseType = databaseType == null ? DatabaseType.POSTGRESQL : databaseType;
     }
 
     public String getDatabaseHost() {
@@ -49,11 +62,11 @@ public class PostgresMcpProperties {
         this.databaseHost = databaseHost;
     }
 
-    public int getDatabasePort() {
-        return databasePort;
+    public Integer getDatabasePort() {
+        return databasePort == null ? databaseType.defaultPort() : databasePort;
     }
 
-    public void setDatabasePort(int databasePort) {
+    public void setDatabasePort(Integer databasePort) {
         this.databasePort = databasePort;
     }
 

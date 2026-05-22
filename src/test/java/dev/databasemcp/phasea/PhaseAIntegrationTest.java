@@ -3,7 +3,7 @@ package dev.databasemcp.phasea;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import dev.databasemcp.config.PostgresMcpProperties;
+import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.schema.SchemaIntrospectionService;
 import dev.databasemcp.sql.JdbcSqlClient;
 import dev.databasemcp.sql.QueryResult;
@@ -76,8 +76,8 @@ class PhaseAIntegrationTest {
         }
     }
 
-    private static PostgresMcpProperties properties(SqlAccessMode accessMode) {
-        PostgresMcpProperties properties = new PostgresMcpProperties();
+    private static DatabaseMcpProperties properties(SqlAccessMode accessMode) {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseUri(POSTGRES.getJdbcUrl() + "?user=" + POSTGRES.getUsername() + "&password=" + POSTGRES.getPassword());
         properties.setAccessMode(accessMode);
         return properties;

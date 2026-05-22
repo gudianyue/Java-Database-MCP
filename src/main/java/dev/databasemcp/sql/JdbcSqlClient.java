@@ -2,7 +2,7 @@ package dev.databasemcp.sql;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import dev.databasemcp.config.PostgresMcpProperties;
+import dev.databasemcp.config.DatabaseMcpProperties;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,17 +24,17 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcSqlClient.class);
 
-    private final PostgresMcpProperties properties;
+    private final DatabaseMcpProperties properties;
     private final RestrictedSqlGuard restrictedSqlGuard;
     private volatile DataSource dataSource;
 
     @Autowired
-    public JdbcSqlClient(PostgresMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard) {
+    public JdbcSqlClient(DatabaseMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard) {
         this.properties = properties;
         this.restrictedSqlGuard = restrictedSqlGuard;
     }
 
-    JdbcSqlClient(PostgresMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard, DataSource dataSource) {
+    JdbcSqlClient(DatabaseMcpProperties properties, RestrictedSqlGuard restrictedSqlGuard, DataSource dataSource) {
         this.properties = properties;
         this.restrictedSqlGuard = restrictedSqlGuard;
         this.dataSource = dataSource;
@@ -142,7 +142,7 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
     private HikariDataSource createDataSource() {
         String jdbcUrl = properties.resolvedJdbcUrl();
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
-            throw new IllegalStateException("数据库连接未配置。请设置 DATABASE_URI，或设置 POSTGRES_HOST、POSTGRES_DATABASE、POSTGRES_USERNAME、POSTGRES_PASSWORD。");
+            throw new IllegalStateException("数据库连接未配置。请设置 DATABASE_URI，或设置 DATABASE_HOST、DATABASE_NAME、DATABASE_USERNAME、DATABASE_PASSWORD。");
         }
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(jdbcUrl);
@@ -153,7 +153,7 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
             config.setPassword(properties.getDatabasePassword());
         }
         config.setMaximumPoolSize(properties.getMaximumPoolSize());
-        config.setPoolName("postgres-mcp");
+        config.setPoolName("database-mcp");
         return new HikariDataSource(config);
     }
 

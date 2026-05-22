@@ -17,13 +17,14 @@ server:
   address: ${SERVER_ADDRESS:127.0.0.1}
   port: ${SERVER_PORT:8000}
 
-postgres-mcp:
+database-mcp:
+  database-type: ${DATABASE_TYPE:postgresql}
   access-mode: unrestricted
   restricted-timeout-seconds: 30
   maximum-pool-size: 5
   database-uri: ${DATABASE_URI:}
-  database-host: ${POSTGRES_HOST:}
-  database-port: ${POSTGRES_PORT:5432}
-  database-name: ${POSTGRES_DATABASE:${POSTGRES_DB:}}
-  database-username: ${POSTGRES_USERNAME:${POSTGRES_USER:}}
-  database-password: ${POSTGRES_PASSWORD:}
+  database-host: ${DATABASE_HOST:}
+  database-port: ${DATABASE_PORT:}
+  database-name: ${DATABASE_NAME:}
+  database-username: ${DATABASE_USERNAME:}
+  database-password: ${DATABASE_PASSWORD:}
