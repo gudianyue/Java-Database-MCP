@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>dev.postgresmcp</groupId>
-    <artifactId>postgres-mcp-java</artifactId>
+    <groupId>dev.databasemcp</groupId>
+    <artifactId>database-mcp-java</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>postgres-mcp-java</name>
-    <description>PostgreSQL MCP 服务的 Java 架构实现</description>
+    <name>database-mcp-java</name>
+    <description>通用数据库 MCP 服务的 Java 架构实现</description>
 
     <licenses>
         <license>

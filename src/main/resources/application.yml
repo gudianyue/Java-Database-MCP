@@ -1,17 +1,17 @@
 spring:
   application:
-    name: postgres-mcp-java
+    name: database-mcp-java
   main:
     banner-mode: off
   ai:
     mcp:
       server:
-        name: postgres-mcp
+        name: database-mcp
         version: 0.1.0
         type: sync
         protocol: sse
         stdio: ${MCP_STDIO_ENABLED:false}
-        instructions: 提供数据库结构查看和受控 SQL 执行能力的 PostgreSQL MCP 服务。
+        instructions: 提供数据库结构查看和受控 SQL 执行能力的通用数据库 MCP 服务。
 
 server:
   address: ${SERVER_ADDRESS:127.0.0.1}
