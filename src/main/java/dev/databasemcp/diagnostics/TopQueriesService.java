@@ -1,8 +1,11 @@
 package dev.databasemcp.diagnostics;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 
@@ -13,13 +16,18 @@ public class TopQueriesService {
 
     private final SqlClient sqlClient;
     private final PostgresExtensionService extensionService;
+    private final DatabaseMcpProperties properties;
 
-    public TopQueriesService(SqlClient sqlClient, PostgresExtensionService extensionService) {
+    public TopQueriesService(SqlClient sqlClient, PostgresExtensionService extensionService, DatabaseMcpProperties properties) {
         this.sqlClient = sqlClient;
         this.extensionService = extensionService;
+        this.properties = properties;
     }
 
     public String getTopQueries(String sortBy, int limit) {
+        if (properties.getDatabaseType() != DatabaseType.POSTGRESQL) {
+            return "当前数据库类型 " + databaseTypeName() + " 暂不支持 get_top_queries；该工具首版仅支持 PostgreSQL 的 pg_stat_statements。";
+        }
         String criteria = sortBy == null || sortBy.isBlank() ? "resources" : sortBy;
         if (!extensionService.isExtensionInstalled(PG_STAT_STATEMENTS)) {
             return pgStatStatementsInstallMessage();
@@ -30,6 +38,10 @@ public class TopQueriesService {
             case "total_time" -> topQueriesByTime(limit, "total");
             default -> throw new IllegalArgumentException("无效排序条件。请使用 'resources'、'mean_time' 或 'total_time'。");
         };
+    }
+
+    private String databaseTypeName() {
+        return properties.getDatabaseType().name().toLowerCase(Locale.ROOT);
     }
 
     private String topQueriesByTime(int limit, String sortBy) {

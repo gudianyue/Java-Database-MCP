@@ -3,6 +3,8 @@ package dev.databasemcp.diagnostics;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.math.BigDecimal;
@@ -30,14 +32,19 @@ public class IndexAdvisorService {
 
     private final SqlClient sqlClient;
     private final PostgresExtensionService extensionService;
+    private final DatabaseMcpProperties properties;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public IndexAdvisorService(SqlClient sqlClient, PostgresExtensionService extensionService) {
+    public IndexAdvisorService(SqlClient sqlClient, PostgresExtensionService extensionService, DatabaseMcpProperties properties) {
         this.sqlClient = sqlClient;
         this.extensionService = extensionService;
+        this.properties = properties;
     }
 
     public String analyzeWorkloadIndexes(int maxIndexSizeMb, String method) {
+        if (properties.getDatabaseType() != DatabaseType.POSTGRESQL) {
+            return unsupportedDatabaseMessage();
+        }
         if (usesLlm(method)) {
             return llmDeferredMessage();
         }
@@ -69,6 +76,9 @@ public class IndexAdvisorService {
     }
 
     public String analyzeQueryIndexes(List<String> queries, int maxIndexSizeMb, String method) {
+        if (properties.getDatabaseType() != DatabaseType.POSTGRESQL) {
+            return unsupportedDatabaseMessage();
+        }
         if (queries == null || queries.isEmpty()) {
             throw new IllegalArgumentException("请提供非空 SQL 查询列表。");
         }
@@ -83,6 +93,14 @@ public class IndexAdvisorService {
             .map(query -> new WorkloadQuery(query, 1.0))
             .toList();
         return analyze(workload, maxIndexSizeMb, "query_list");
+    }
+
+    private String unsupportedDatabaseMessage() {
+        return "当前数据库类型 " + databaseTypeName() + " 暂不支持索引建议；该工具首版依赖 PostgreSQL EXPLAIN JSON、pg_stat_statements 和 HypoPG。";
+    }
+
+    private String databaseTypeName() {
+        return properties.getDatabaseType().name().toLowerCase(Locale.ROOT);
     }
 
     private String analyze(List<WorkloadQuery> workload, int maxIndexSizeMb, String source) {

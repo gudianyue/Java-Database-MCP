@@ -1,5 +1,7 @@
 package dev.databasemcp.diagnostics;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -29,12 +31,17 @@ public class DatabaseHealthService {
     );
 
     private final SqlClient sqlClient;
+    private final DatabaseMcpProperties properties;
 
-    public DatabaseHealthService(SqlClient sqlClient) {
+    public DatabaseHealthService(SqlClient sqlClient, DatabaseMcpProperties properties) {
         this.sqlClient = sqlClient;
+        this.properties = properties;
     }
 
     public String analyze(String healthType) {
+        if (properties.getDatabaseType() != DatabaseType.POSTGRESQL) {
+            return "当前数据库类型 " + databaseTypeName() + " 暂不支持 analyze_db_health；该工具首版依赖 PostgreSQL 系统视图。";
+        }
         LinkedHashSet<String> healthTypes = parseHealthTypes(healthType);
         if (healthTypes.contains("all")) {
             healthTypes = new LinkedHashSet<>(List.of("index", "connection", "vacuum", "sequence", "replication", "buffer", "constraint"));
@@ -54,6 +61,10 @@ public class DatabaseHealthService {
             }
         }
         return sections.isEmpty() ? "未执行任何健康检查。" : String.join(System.lineSeparator(), sections);
+    }
+
+    private String databaseTypeName() {
+        return properties.getDatabaseType().name().toLowerCase(Locale.ROOT);
     }
 
     private static LinkedHashSet<String> parseHealthTypes(String healthType) {

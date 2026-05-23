@@ -3,6 +3,8 @@ package dev.databasemcp.diagnostics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.math.BigDecimal;
@@ -17,7 +19,7 @@ class DatabaseHealthServiceTest {
     @Test
     void defaultsToAllHealthChecks() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient);
+        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
 
         String result = service.analyze(null);
 
@@ -35,7 +37,7 @@ class DatabaseHealthServiceTest {
     @Test
     void supportsCommaSeparatedHealthTypes() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient);
+        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
 
         String result = service.analyze("connection, buffer");
 
@@ -45,7 +47,7 @@ class DatabaseHealthServiceTest {
 
     @Test
     void rejectsInvalidHealthTypes() {
-        DatabaseHealthService service = new DatabaseHealthService(new RecordingSqlClient());
+        DatabaseHealthService service = new DatabaseHealthService(new RecordingSqlClient(), new DatabaseMcpProperties());
 
         assertThatThrownBy(() -> service.analyze("storage"))
             .isInstanceOf(IllegalArgumentException.class)
@@ -56,7 +58,7 @@ class DatabaseHealthServiceTest {
     void reportsIndividualCheckFailureWithoutStoppingOtherChecks() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
         sqlClient.failReplicationSlots = true;
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient);
+        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
 
         String result = service.analyze("replication,connection");
 
@@ -72,11 +74,24 @@ class DatabaseHealthServiceTest {
             "index", "users_email_idx",
             "table", "users"
         ));
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient);
+        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
 
         String result = service.analyze("index");
 
         assertThat(result).contains("public.users_email_idx").contains("无效");
+    }
+
+    @Test
+    void mysqlReturnsUnsupportedMessage() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.MYSQL);
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseHealthService service = new DatabaseHealthService(sqlClient, properties);
+
+        String result = service.analyze("all");
+
+        assertThat(result).contains("当前数据库类型 mysql 暂不支持 analyze_db_health");
+        assertThat(sqlClient.sqlCalls).isEmpty();
     }
 
     private static final class RecordingSqlClient implements SqlClient {

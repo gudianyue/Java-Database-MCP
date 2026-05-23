@@ -3,6 +3,8 @@ package dev.databasemcp.diagnostics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.ArrayList;
@@ -16,7 +18,7 @@ class TopQueriesServiceTest {
     @Test
     void usesPg13TimingColumnsForMeanTime() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
 
         String result = service.getTopQueries("mean_time", 5);
 
@@ -28,7 +30,7 @@ class TopQueriesServiceTest {
     @Test
     void usesPg12TimingColumnsForTotalTime() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 12));
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 12), new DatabaseMcpProperties());
 
         service.getTopQueries("total_time", 3);
 
@@ -39,7 +41,7 @@ class TopQueriesServiceTest {
     @Test
     void resourceQueryUsesWalBytesForPg13() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
 
         service.getTopQueries("resources", 10);
 
@@ -49,7 +51,7 @@ class TopQueriesServiceTest {
     @Test
     void returnsInstallMessageWhenPgStatStatementsIsMissing() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, false, 16));
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, false, 16), new DatabaseMcpProperties());
 
         String result = service.getTopQueries("resources", 10);
 
@@ -60,11 +62,24 @@ class TopQueriesServiceTest {
     @Test
     void rejectsInvalidSortCriteria() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
 
         assertThatThrownBy(() -> service.getTopQueries("calls", 10))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("无效排序条件");
+    }
+
+    @Test
+    void mysqlReturnsUnsupportedMessage() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.MYSQL);
+        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), properties);
+
+        String result = service.getTopQueries("resources", 10);
+
+        assertThat(result).contains("当前数据库类型 mysql 暂不支持 get_top_queries");
+        assertThat(sqlClient.lastSql).isNull();
     }
 
     private static final class RecordingSqlClient implements SqlClient {

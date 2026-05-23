@@ -3,6 +3,8 @@ package dev.databasemcp.diagnostics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.time.Instant;
@@ -17,7 +19,7 @@ class IndexAdvisorServiceTest {
     @Test
     void analyzesExplicitQueriesWithHypopgCostComparison() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16));
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
 
         String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "dta");
 
@@ -33,7 +35,7 @@ class IndexAdvisorServiceTest {
     @Test
     void analyzesWorkloadFromPgStatStatements() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16));
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
 
         String result = service.analyzeWorkloadIndexes(10000, "dta");
 
@@ -45,7 +47,8 @@ class IndexAdvisorServiceTest {
     void rejectsTooManyQueries() {
         IndexAdvisorService service = new IndexAdvisorService(
             new RecordingSqlClient(),
-            new FakeExtensionService(new RecordingSqlClient(), true, true, 16)
+            new FakeExtensionService(new RecordingSqlClient(), true, true, 16),
+            new DatabaseMcpProperties()
         );
 
         assertThatThrownBy(() -> service.analyzeQueryIndexes(List.of("SELECT 1", "SELECT 2", "SELECT 3", "SELECT 4", "SELECT 5", "SELECT 6", "SELECT 7", "SELECT 8", "SELECT 9", "SELECT 10", "SELECT 11"), 10000, "dta"))
@@ -56,7 +59,7 @@ class IndexAdvisorServiceTest {
     @Test
     void returnsHypopgInstallMessageWhenMissing() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, false, 16));
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, false, 16), new DatabaseMcpProperties());
 
         String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "dta");
 
@@ -66,11 +69,37 @@ class IndexAdvisorServiceTest {
     @Test
     void defersLlmMethod() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16));
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
 
         String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "llm");
 
         assertThat(result).contains("LLM 索引优化方法").contains("method='dta'");
+    }
+
+    @Test
+    void mysqlReturnsUnsupportedMessageForExplicitQueries() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.MYSQL);
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), properties);
+
+        String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users"), 10000, "dta");
+
+        assertThat(result).contains("当前数据库类型 mysql 暂不支持索引建议");
+        assertThat(sqlClient.sqlCalls).isEmpty();
+    }
+
+    @Test
+    void mysqlReturnsUnsupportedMessageForWorkload() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.MYSQL);
+        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), properties);
+
+        String result = service.analyzeWorkloadIndexes(10000, "dta");
+
+        assertThat(result).contains("当前数据库类型 mysql 暂不支持索引建议");
+        assertThat(sqlClient.sqlCalls).isEmpty();
     }
 
     private static final class RecordingSqlClient implements SqlClient {
