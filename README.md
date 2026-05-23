@@ -1,37 +1,31 @@
 # Database MCP Java
 
-这是 PostgreSQL MCP 服务的 Java 21 / Spring Boot / Maven 实现线。
+Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL 和 MySQL 的基础数据库工具；部分性能诊断能力首版仅支持 PostgreSQL。
 
-## 阶段状态
+## 支持范围
 
-- 阶段 0：项目骨架和兼容性说明
-- 阶段 A：基础数据库访问工具
-  - `execute_sql`
-  - `list_schemas`
-  - `list_objects`
-  - `get_object_details`
-- 阶段 B：性能诊断工具
-  - `explain_query`
-  - `get_top_queries`
-- 阶段 C：数据库健康检查工具
-  - `analyze_db_health`
-- 阶段 D：索引调优工具
-  - `analyze_workload_indexes`
-  - `analyze_query_indexes`
+### PostgreSQL
 
-后续阶段会继续加入依赖 LLM 的能力。
+- 基础工具：`execute_sql`、`list_schemas`、`list_objects`、`get_object_details`
+- 执行计划：`explain_query`
+- 慢查询统计：`get_top_queries`，依赖 `pg_stat_statements`
+- 健康检查：`analyze_db_health`
+- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，可结合 HypoPG 评估候选索引
 
-## 配置
+### MySQL
 
-### MCP 传输
+- 受控 SQL 执行：`execute_sql`
+- 结构查看：`list_schemas`、`list_objects`、`get_object_details`
+- 基础执行计划：`explain_query`
+- 慢查询统计、健康检查、索引建议：当前返回不支持说明
 
-服务支持 stdio 和 HTTP/SSE 两种 MCP 传输方式。同一构建产物保留两种能力，但 Spring AI 1.1.0 的自动配置一次只启用一种传输；默认启用 HTTP/SSE。
+## MCP 传输
 
-- HTTP/SSE 默认启用，适合本机或受信任内网中的 MCP Client 连接。
-- stdio 保留为可选模式，适合由本地 MCP Client 以子进程方式启动。
-- HTTP/SSE 默认监听 `127.0.0.1:8000`，SSE 连接地址为 `http://127.0.0.1:8000/sse`。
-- SSE 路径使用 MCP Java SDK / Spring AI 默认值：`/sse`；客户端消息端点使用默认值 `/mcp/message`。
-- 本阶段不内置鉴权，只建议用于本机或受信任内网。需要公网访问时，应放在具备鉴权能力的反向代理或网关之后。
+服务默认启用 HTTP/SSE，默认监听 `127.0.0.1:8000`，SSE 地址为：
+
+```text
+http://127.0.0.1:8000/sse
+```
 
 常用环境变量：
 
@@ -41,82 +35,86 @@ SERVER_PORT=8000
 MCP_STDIO_ENABLED=false
 ```
 
-如果要让局域网内其他 MCP Client 访问，可以显式绑定所有网卡：
+如需让受信任内网中的 MCP Client 访问，可绑定到所有网卡：
 
 ```bash
 SERVER_ADDRESS=0.0.0.0
 SERVER_PORT=8000
 ```
 
-然后使用 `http://<服务所在机器IP>:8000/sse` 连接。
+本项目当前不内置鉴权。公开网络访问时，应放在具备鉴权和访问控制能力的反向代理或网关之后。
 
-如果要使用 stdio 模式，可以设置：
+## 数据库连接
 
-```bash
-MCP_STDIO_ENABLED=true
-```
-
-启用 stdio 后，Spring AI 1.1.0 会关闭同一进程中的 SSE 路由；需要 HTTP/SSE 时请保持 `MCP_STDIO_ENABLED=false`。
-
-### 数据库连接
-
-数据库连接可以通过完整 JDBC URL 配置：
+可以使用完整 JDBC URL：
 
 ```bash
+DATABASE_TYPE=postgresql
 DATABASE_URI=jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres
 ```
 
-也可以通过 Spring 配置文件配置：
-
-```yaml
-postgres-mcp:
-  database-uri: jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres
-```
-
-如果用户名或密码包含特殊字符，请按 URL 参数规则进行编码。
-
-也可以拆分为主机、端口、库名、用户名和密码：
+也可以使用拆分配置：
 
 ```bash
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DATABASE=postgres
-POSTGRES_USERNAME=postgres
-POSTGRES_PASSWORD=postgres
+DATABASE_TYPE=postgresql
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=postgres
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
 ```
 
-对应 Spring 配置：
+如果同时配置 `DATABASE_URI` 和拆分连接参数，服务优先使用 `DATABASE_URI`。用户名或密码包含特殊字符时，请按 JDBC URL 参数规则编码。
 
-```yaml
-postgres-mcp:
-  database-host: localhost
-  database-port: 5432
-  database-name: postgres
-  database-username: postgres
-  database-password: postgres
-```
-
-如果同时配置了 `DATABASE_URI` 和拆分连接参数，会优先使用 `DATABASE_URI`。
-
-访问模式配置示例：
-
-```yaml
-postgres-mcp:
-  access-mode: restricted
-```
-
-### SQL 执行日志
-
-服务会用 `INFO` 日志打印执行前的 SQL 模板和参数原值，并在执行后打印耗时、成功或失败状态、返回行数。参数值不会遮蔽或截断，因此日志可能包含密码、令牌、个人信息或业务敏感数据；只应在本机或受信任内网环境中开启默认日志输出。
-
-## 命令
+访问模式可通过环境变量配置：
 
 ```bash
-mvn test
-mvn -DskipTests package
+DATABASE_MCP_ACCESS_MODE=restricted
 ```
 
-## Docker 部署
+`restricted` 模式用于受控 SQL 执行，`unrestricted` 模式适合本地开发和可信环境。
+
+### PostgreSQL 示例
+
+完整 JDBC URL：
+
+```bash
+DATABASE_TYPE=postgresql
+DATABASE_URI=jdbc:postgresql://localhost:5432/postgres?user=postgres&password=postgres
+```
+
+拆分配置：
+
+```bash
+DATABASE_TYPE=postgresql
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=postgres
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=postgres
+```
+
+### MySQL 示例
+
+完整 JDBC URL：
+
+```bash
+DATABASE_TYPE=mysql
+DATABASE_URI=jdbc:mysql://localhost:3306/app?user=root&password=secret
+```
+
+拆分配置：
+
+```bash
+DATABASE_TYPE=mysql
+DATABASE_HOST=localhost
+DATABASE_PORT=3306
+DATABASE_NAME=app
+DATABASE_USERNAME=root
+DATABASE_PASSWORD=secret
+```
+
+## Docker
 
 构建镜像：
 
@@ -124,60 +122,65 @@ mvn -DskipTests package
 docker build -t database-mcp-java .
 ```
 
-使用完整 JDBC URL 运行：
+使用 PostgreSQL JDBC URL 运行：
 
 ```bash
 docker run --rm -i \
   -p 127.0.0.1:8000:8000 \
   -e SERVER_ADDRESS=0.0.0.0 \
   -e SERVER_PORT=8000 \
+  -e DATABASE_TYPE=postgresql \
   -e "DATABASE_URI=jdbc:postgresql://host.docker.internal:5432/postgres?user=postgres&password=postgres" \
+  -e DATABASE_MCP_ACCESS_MODE=restricted \
   database-mcp-java
 ```
 
-使用用户名和密码拆分配置运行：
+使用 MySQL 拆分配置运行：
 
 ```bash
 docker run --rm -i \
   -p 127.0.0.1:8000:8000 \
   -e SERVER_ADDRESS=0.0.0.0 \
   -e SERVER_PORT=8000 \
-  -e POSTGRES_HOST=host.docker.internal \
-  -e POSTGRES_PORT=5432 \
-  -e POSTGRES_DATABASE=postgres \
-  -e POSTGRES_USERNAME=postgres \
-  -e POSTGRES_PASSWORD=postgres \
+  -e DATABASE_TYPE=mysql \
+  -e DATABASE_HOST=host.docker.internal \
+  -e DATABASE_PORT=3306 \
+  -e DATABASE_NAME=app \
+  -e DATABASE_USERNAME=root \
+  -e DATABASE_PASSWORD=secret \
+  -e DATABASE_MCP_ACCESS_MODE=restricted \
   database-mcp-java
 ```
 
-本仓库也提供 `docker-compose.yml`，用于本地启动一个 PostgreSQL 和 MCP 服务示例：
+仓库提供 `docker-compose.yml`，用于本地启动一个 PostgreSQL 示例数据库和 MCP 服务：
 
 ```bash
 docker compose up --build
 ```
 
-`docker-compose.yml` 默认将 MCP HTTP/SSE 端口映射到宿主机 `127.0.0.1:8000`，连接地址为：
-
-```text
-http://127.0.0.1:8000/sse
-```
-
-如果需要内网机器访问，可以在启动前设置：
+默认会把 MCP HTTP/SSE 端口映射到宿主机 `127.0.0.1:8000`。如需调整绑定地址或端口：
 
 ```bash
-POSTGRES_MCP_BIND_ADDRESS=0.0.0.0
-POSTGRES_MCP_HTTP_PORT=8000
+DATABASE_MCP_BIND_ADDRESS=0.0.0.0
+DATABASE_MCP_HTTP_PORT=8000
 docker compose up --build
 ```
 
-此配置会让宿主机所有网卡暴露 MCP HTTP/SSE 端口，仅应在受信任内网中使用。
+绑定到 `0.0.0.0` 会让宿主机所有网卡暴露 MCP HTTP/SSE 端口，仅应在受信任网络中使用。
 
-## 测试说明
+## 构建与测试
 
-`mvn test` 会运行单元测试和 MCP 注解可见性测试。PostgreSQL 集成测试使用 Testcontainers；如果本机 Docker daemon 不可用，该集成测试会自动跳过，并在日志中保留原因。
+```bash
+mvn test
+mvn -DskipTests package
+```
 
-## 开源协议
+`mvn test` 会运行单元测试和 MCP 注解可见性测试。PostgreSQL 集成测试使用 Testcontainers；如果本机 Docker daemon 不可用，相关测试会自动跳过并在日志中说明原因。
+
+## 第三方来源
+
+早期实现参考了 `crystaldba/postgres-mcp` 的工具意图和 PostgreSQL 诊断能力。本项目已经改造为通用数据库 MCP 服务，但仍保留原项目许可声明，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 许可证
 
 本项目使用 [MIT License](LICENSE)。
-
-本项目是基于 `crystaldba/postgres-mcp` 的 Java 重新实现与架构迁移。原始项目同样使用 MIT License，相关版权与许可声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

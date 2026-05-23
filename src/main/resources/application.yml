@@ -19,7 +19,7 @@ server:
 
 database-mcp:
   database-type: ${DATABASE_TYPE:postgresql}
-  access-mode: unrestricted
+  access-mode: ${DATABASE_MCP_ACCESS_MODE:unrestricted}
   restricted-timeout-seconds: 30
   maximum-pool-size: 5
   database-uri: ${DATABASE_URI:}

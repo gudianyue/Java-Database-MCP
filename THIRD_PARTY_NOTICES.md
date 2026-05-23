@@ -1,6 +1,6 @@
 # 第三方声明
 
-本项目是基于 `crystaldba/postgres-mcp` 的 Java 重新实现与架构迁移。
+本项目早期实现参考了 `crystaldba/postgres-mcp` 的工具意图和 PostgreSQL 诊断能力。当前项目已改造为通用数据库 MCP 服务，但仍保留原项目许可声明。
 
 原始项目：
 
