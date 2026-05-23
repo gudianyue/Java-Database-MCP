@@ -30,4 +30,13 @@ class DatabaseToolFacadeAnnotationTest {
             "analyze_query_indexes"
         );
     }
+
+    @Test
+    void describesTopQueriesWithGenericDatabaseMcpLanguage() throws NoSuchMethodException {
+        McpTool annotation = DatabaseToolFacade.class
+            .getDeclaredMethod("getTopQueries", String.class, Integer.class)
+            .getAnnotation(McpTool.class);
+
+        assertThat(annotation.description()).isEqualTo("报告慢查询或资源消耗较高的查询；当前 PostgreSQL 模式基于 pg_stat_statements");
+    }
 }

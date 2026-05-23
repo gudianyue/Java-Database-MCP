@@ -97,7 +97,7 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "get_top_queries", description = "基于 pg_stat_statements 报告慢查询或资源消耗较高的查询")
+    @McpTool(name = "get_top_queries", description = "报告慢查询或资源消耗较高的查询；当前 PostgreSQL 模式基于 pg_stat_statements")
     public String getTopQueries(
         @McpToolParam(description = "排序条件：'resources'、'mean_time' 或 'total_time'；默认 resources") String sortBy,
         @McpToolParam(description = "按 mean_time 或 total_time 排序时返回的查询数量；默认 10") Integer limit
