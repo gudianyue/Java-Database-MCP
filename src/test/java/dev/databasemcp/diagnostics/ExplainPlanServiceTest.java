@@ -3,6 +3,10 @@ package dev.databasemcp.diagnostics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.databasemcp.dialect.DatabaseDialect;
+import dev.databasemcp.dialect.DatabaseDialectProvider;
+import dev.databasemcp.dialect.MySqlDatabaseDialect;
+import dev.databasemcp.dialect.PostgresDatabaseDialect;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.ArrayList;
@@ -16,7 +20,11 @@ class ExplainPlanServiceTest {
     @Test
     void explainsQueryWithTextPlan() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        ExplainPlanService service = new ExplainPlanService(sqlClient, new FakeExtensionService(sqlClient, false, 16));
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new PostgresDatabaseDialect(sqlClient))
+        );
 
         String result = service.explain("SELECT * FROM users", false, List.of());
 
@@ -27,7 +35,11 @@ class ExplainPlanServiceTest {
     @Test
     void rejectsAnalyzeWithHypotheticalIndexes() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        ExplainPlanService service = new ExplainPlanService(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, true, 16),
+            new FixedDialectProvider(new PostgresDatabaseDialect(sqlClient))
+        );
 
         assertThatThrownBy(() -> service.explain("SELECT * FROM users", true, List.of(Map.of("table", "users", "columns", List.of("email")))))
             .isInstanceOf(IllegalArgumentException.class)
@@ -37,7 +49,11 @@ class ExplainPlanServiceTest {
     @Test
     void createsHypotheticalIndexesWithQuotedIdentifiers() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        ExplainPlanService service = new ExplainPlanService(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, true, 16),
+            new FixedDialectProvider(new PostgresDatabaseDialect(sqlClient))
+        );
 
         service.explain("SELECT * FROM public.users WHERE email = 'a@example.com'", false, List.of(
             Map.of("table", "public.users", "columns", List.of("email"), "using", "btree")
@@ -57,7 +73,11 @@ class ExplainPlanServiceTest {
     @Test
     void returnsHypopgInstallMessageWhenExtensionIsMissing() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        ExplainPlanService service = new ExplainPlanService(sqlClient, new FakeExtensionService(sqlClient, false, 16));
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new PostgresDatabaseDialect(sqlClient))
+        );
 
         String result = service.explain("SELECT * FROM users", false, List.of(Map.of("table", "users", "columns", List.of("email"))));
 
@@ -68,11 +88,47 @@ class ExplainPlanServiceTest {
     @Test
     void rejectsMutatingExplainAnalyze() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        ExplainPlanService service = new ExplainPlanService(sqlClient, new FakeExtensionService(sqlClient, false, 16));
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new PostgresDatabaseDialect(sqlClient))
+        );
 
         assertThatThrownBy(() -> service.explain("DELETE FROM users", true, List.of()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("EXPLAIN ANALYZE 不允许执行 DELETE");
+    }
+
+    @Test
+    void mysqlExplainUsesCurrentDialect() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new MySqlDatabaseDialect(sqlClient))
+        );
+
+        service.explain("SELECT * FROM users", false, List.of());
+
+        assertThat(sqlClient.sqlCalls).containsExactly("EXPLAIN SELECT * FROM users");
+    }
+
+    @Test
+    void mysqlRejectsHypotheticalIndexes() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new MySqlDatabaseDialect(sqlClient))
+        );
+
+        String result = service.explain(
+            "SELECT * FROM users",
+            false,
+            List.of(Map.of("table", "users", "columns", List.of("email")))
+        );
+
+        assertThat(result).contains("MySQL 暂不支持 hypothetical_indexes");
     }
 
     private static final class RecordingSqlClient implements SqlClient {
@@ -97,6 +153,20 @@ class ExplainPlanServiceTest {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("QUERY PLAN", "Seq Scan on users  (cost=0.00..1.01 rows=1 width=32)");
             return new QueryResult(List.of(row));
+        }
+    }
+
+    private static final class FixedDialectProvider extends DatabaseDialectProvider {
+        private final DatabaseDialect dialect;
+
+        private FixedDialectProvider(DatabaseDialect dialect) {
+            super(null, List.of());
+            this.dialect = dialect;
+        }
+
+        @Override
+        public DatabaseDialect current() {
+            return dialect;
         }
     }
 

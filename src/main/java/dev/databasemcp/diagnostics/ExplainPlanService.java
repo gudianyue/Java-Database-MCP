@@ -1,5 +1,8 @@
 package dev.databasemcp.diagnostics;
 
+import dev.databasemcp.config.DatabaseType;
+import dev.databasemcp.dialect.DatabaseDialect;
+import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
@@ -18,10 +21,16 @@ public class ExplainPlanService {
 
     private final SqlClient sqlClient;
     private final PostgresExtensionService extensionService;
+    private final DatabaseDialectProvider dialectProvider;
 
-    public ExplainPlanService(SqlClient sqlClient, PostgresExtensionService extensionService) {
+    public ExplainPlanService(
+        SqlClient sqlClient,
+        PostgresExtensionService extensionService,
+        DatabaseDialectProvider dialectProvider
+    ) {
         this.sqlClient = sqlClient;
         this.extensionService = extensionService;
+        this.dialectProvider = dialectProvider;
     }
 
     public String explain(String sql, boolean analyze, List<Map<String, Object>> hypotheticalIndexes) {
@@ -31,6 +40,15 @@ public class ExplainPlanService {
         }
         if (analyze && !indexes.isEmpty()) {
             throw new IllegalArgumentException("不能同时使用 analyze 和 hypothetical_indexes");
+        }
+        DatabaseDialect dialect = dialectProvider.current();
+        if (dialect.databaseType() != DatabaseType.POSTGRESQL) {
+            if (!indexes.isEmpty()) {
+                return dialect.databaseType() == DatabaseType.MYSQL
+                    ? "MySQL 暂不支持 hypothetical_indexes。"
+                    : "当前数据库类型暂不支持 hypothetical_indexes。";
+            }
+            return renderPlan(dialect.explain(sql));
         }
         if (analyze) {
             rejectMutatingAnalyze(sql);
