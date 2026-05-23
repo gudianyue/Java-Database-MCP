@@ -43,12 +43,17 @@ public class ExplainPlanService {
         }
         DatabaseDialect dialect = dialectProvider.current();
         if (dialect.databaseType() != DatabaseType.POSTGRESQL) {
+            if (analyze) {
+                return dialect.databaseType() == DatabaseType.MYSQL
+                    ? "MySQL 暂不支持 analyze=true；请使用 analyze=false 获取基础 EXPLAIN。"
+                    : "当前数据库类型暂不支持 analyze=true；请使用 analyze=false 获取基础 EXPLAIN。";
+            }
             if (!indexes.isEmpty()) {
                 return dialect.databaseType() == DatabaseType.MYSQL
                     ? "MySQL 暂不支持 hypothetical_indexes。"
                     : "当前数据库类型暂不支持 hypothetical_indexes。";
             }
-            return renderPlan(dialect.explain(sql));
+            return renderRows(dialect.explain(sql));
         }
         if (analyze) {
             rejectMutatingAnalyze(sql);
@@ -87,6 +92,19 @@ public class ExplainPlanService {
                     builder.append(System.lineSeparator());
                 }
                 builder.append(row.values().iterator().next());
+            }
+        }
+        return builder.length() == 0 ? "[]" : builder.toString();
+    }
+
+    private static String renderRows(QueryResult result) {
+        StringBuilder builder = new StringBuilder();
+        for (Map<String, Object> row : result.rows()) {
+            if (!row.isEmpty()) {
+                if (builder.length() > 0) {
+                    builder.append(System.lineSeparator());
+                }
+                builder.append(row);
             }
         }
         return builder.length() == 0 ? "[]" : builder.toString();

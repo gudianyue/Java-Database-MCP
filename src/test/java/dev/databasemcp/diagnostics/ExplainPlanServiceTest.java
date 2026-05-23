@@ -101,16 +101,18 @@ class ExplainPlanServiceTest {
 
     @Test
     void mysqlExplainUsesCurrentDialect() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        RecordingSqlClient sqlClient = new RecordingSqlClient(RecordingSqlClient.mysqlPlanResult());
         ExplainPlanService service = new ExplainPlanService(
             sqlClient,
             new FakeExtensionService(sqlClient, false, 16),
             new FixedDialectProvider(new MySqlDatabaseDialect(sqlClient))
         );
 
-        service.explain("SELECT * FROM users", false, List.of());
+        String result = service.explain("SELECT * FROM users", false, List.of());
 
         assertThat(sqlClient.sqlCalls).containsExactly("EXPLAIN SELECT * FROM users");
+        assertThat(result).contains("table=users").contains("type=ALL");
+        assertThat(result).isNotEqualTo("1");
     }
 
     @Test
@@ -131,27 +133,59 @@ class ExplainPlanServiceTest {
         assertThat(result).contains("MySQL 暂不支持 hypothetical_indexes");
     }
 
+    @Test
+    void mysqlRejectsAnalyzeWithoutRunningSql() {
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        ExplainPlanService service = new ExplainPlanService(
+            sqlClient,
+            new FakeExtensionService(sqlClient, false, 16),
+            new FixedDialectProvider(new MySqlDatabaseDialect(sqlClient))
+        );
+
+        String result = service.explain("SELECT * FROM users", true, List.of());
+
+        assertThat(result).contains("MySQL 暂不支持 analyze=true");
+        assertThat(sqlClient.sqlCalls).isEmpty();
+    }
+
     private static final class RecordingSqlClient implements SqlClient {
         private final List<String> sqlCalls = new ArrayList<>();
         private final List<List<Object>> paramsCalls = new ArrayList<>();
+        private final QueryResult result;
+
+        private RecordingSqlClient() {
+            this(postgresPlanResult());
+        }
+
+        private RecordingSqlClient(QueryResult result) {
+            this.result = result;
+        }
 
         @Override
         public QueryResult query(String sql) {
             this.sqlCalls.add(sql);
             this.paramsCalls.add(List.of());
-            return planResult();
+            return result;
         }
 
         @Override
         public QueryResult query(String sql, List<?> params) {
             this.sqlCalls.add(sql);
             this.paramsCalls.add(new ArrayList<>(params));
-            return planResult();
+            return result;
         }
 
-        private static QueryResult planResult() {
+        private static QueryResult postgresPlanResult() {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("QUERY PLAN", "Seq Scan on users  (cost=0.00..1.01 rows=1 width=32)");
+            return new QueryResult(List.of(row));
+        }
+
+        private static QueryResult mysqlPlanResult() {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", 1);
+            row.put("table", "users");
+            row.put("type", "ALL");
             return new QueryResult(List.of(row));
         }
     }
