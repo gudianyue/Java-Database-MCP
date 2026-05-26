@@ -100,7 +100,7 @@ class ExplainPlanServiceTest {
     }
 
     @Test
-    void mysqlExplainUsesCurrentDialect() {
+    void mysqlExplainUsesCurrentDialectWithFormatJson() {
         RecordingSqlClient sqlClient = new RecordingSqlClient(RecordingSqlClient.mysqlPlanResult());
         ExplainPlanService service = new ExplainPlanService(
             sqlClient,
@@ -110,7 +110,7 @@ class ExplainPlanServiceTest {
 
         String result = service.explain("SELECT * FROM users", false, List.of());
 
-        assertThat(sqlClient.sqlCalls).containsExactly("EXPLAIN SELECT * FROM users");
+        assertThat(sqlClient.sqlCalls).containsExactly("EXPLAIN FORMAT=JSON SELECT * FROM users");
         assertThat(result).contains("table=users").contains("type=ALL");
         assertThat(result).isNotEqualTo("1");
     }

@@ -127,7 +127,7 @@ public class MySqlDatabaseDialect implements DatabaseDialect {
 
     @Override
     public QueryResult explain(String sql) {
-        return sqlClient.query("EXPLAIN " + sql);
+        return sqlClient.query("EXPLAIN FORMAT=JSON " + sql);
     }
 
     private QueryResult listTables(String schemaName, String tableType) {

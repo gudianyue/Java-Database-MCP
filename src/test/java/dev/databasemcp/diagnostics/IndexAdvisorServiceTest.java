@@ -14,12 +14,21 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * IndexAdvisorService 现为薄路由层，委托到 DiagnosticDialect。
+ * PG 逻辑测试在 PostgresDiagnosticDialectTest 中，MySQL 逻辑测试在 MySqlDiagnosticDialectTest 中。
+ * 此处只验证路由委托行为。
+ */
 class IndexAdvisorServiceTest {
 
     @Test
-    void analyzesExplicitQueriesWithHypopgCostComparison() {
+    void delegatesToPgDialectForExplicitQueries() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        FakeExtensionService extService = new FakeExtensionService(sqlClient, true, true, 16);
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, extService);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        IndexAdvisorService service = new IndexAdvisorService(provider);
 
         String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "dta");
 
@@ -28,83 +37,42 @@ class IndexAdvisorServiceTest {
             .contains("public.users")
             .contains("email")
             .contains("CREATE INDEX");
-        assertThat(sqlClient.sqlCalls).anySatisfy(sql -> assertThat(sql).contains("hypopg_create_index"));
-        assertThat(sqlClient.sqlCalls).anySatisfy(sql -> assertThat(sql).contains("EXPLAIN (FORMAT JSON)"));
-    }
-
-    @Test
-    void analyzesWorkloadFromPgStatStatements() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
-
-        String result = service.analyzeWorkloadIndexes(10000, "dta");
-
-        assertThat(result).contains("workload_source=query_store").contains("total_recommendations=1");
-        assertThat(sqlClient.sqlCalls).anySatisfy(sql -> assertThat(sql).contains("FROM pg_stat_statements"));
     }
 
     @Test
     void rejectsTooManyQueries() {
-        IndexAdvisorService service = new IndexAdvisorService(
-            new RecordingSqlClient(),
-            new FakeExtensionService(new RecordingSqlClient(), true, true, 16),
-            new DatabaseMcpProperties()
-        );
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, new FakeExtensionService(sqlClient, true, true, 16));
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        IndexAdvisorService service = new IndexAdvisorService(provider);
 
-        assertThatThrownBy(() -> service.analyzeQueryIndexes(List.of("SELECT 1", "SELECT 2", "SELECT 3", "SELECT 4", "SELECT 5", "SELECT 6", "SELECT 7", "SELECT 8", "SELECT 9", "SELECT 10", "SELECT 11"), 10000, "dta"))
+        assertThatThrownBy(() -> service.analyzeQueryIndexes(
+            List.of("SELECT 1", "SELECT 2", "SELECT 3", "SELECT 4", "SELECT 5",
+                     "SELECT 6", "SELECT 7", "SELECT 8", "SELECT 9", "SELECT 10", "SELECT 11"),
+            10000, "dta"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("最多 10 条");
     }
 
     @Test
-    void returnsHypopgInstallMessageWhenMissing() {
+    void routesToMySqlDialectForWorkloadIndexes() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, false, 16), new DatabaseMcpProperties());
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.MYSQL);
+        MySqlFeatureService featureService = new MySqlFeatureService(sqlClient);
+        MySqlDiagnosticDialect mysqlDialect = new MySqlDiagnosticDialect(sqlClient, featureService);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(mysqlDialect), properties);
+        IndexAdvisorService service = new IndexAdvisorService(provider);
 
         String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "dta");
 
-        assertThat(result).contains("hypopg 扩展").contains("CREATE EXTENSION hypopg");
-    }
-
-    @Test
-    void defersLlmMethod() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), new DatabaseMcpProperties());
-
-        String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users WHERE email = 'a@example.com'"), 10000, "llm");
-
-        assertThat(result).contains("LLM 索引优化方法").contains("method='dta'");
-    }
-
-    @Test
-    void mysqlReturnsUnsupportedMessageForExplicitQueries() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseMcpProperties properties = new DatabaseMcpProperties();
-        properties.setDatabaseType(DatabaseType.MYSQL);
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), properties);
-
-        String result = service.analyzeQueryIndexes(List.of("SELECT * FROM users"), 10000, "dta");
-
-        assertThat(result).contains("当前数据库类型 mysql 暂不支持索引建议");
-        assertThat(sqlClient.sqlCalls).isEmpty();
-    }
-
-    @Test
-    void mysqlReturnsUnsupportedMessageForWorkload() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseMcpProperties properties = new DatabaseMcpProperties();
-        properties.setDatabaseType(DatabaseType.MYSQL);
-        IndexAdvisorService service = new IndexAdvisorService(sqlClient, new FakeExtensionService(sqlClient, true, true, 16), properties);
-
-        String result = service.analyzeWorkloadIndexes(10000, "dta");
-
-        assertThat(result).contains("当前数据库类型 mysql 暂不支持索引建议");
-        assertThat(sqlClient.sqlCalls).isEmpty();
+        assertThat(result).isNotNull();
     }
 
     private static final class RecordingSqlClient implements SqlClient {
         private final List<String> sqlCalls = new ArrayList<>();
-        private boolean hypopgActive;
+        private boolean hypopgActive = false;
 
         @Override
         public QueryResult query(String sql) {
@@ -150,14 +118,38 @@ class IndexAdvisorServiceTest {
                     }]
                     """.formatted(cost))));
             }
+            if (sql.contains("EXPLAIN FORMAT=JSON")) {
+                return new QueryResult(List.of(row("EXPLAIN", """
+                    {"query_block": {"cost_info": {"query_cost": "100.00"}, "table": {"table_name": "users", "access_type": "ALL", "attached_condition": "(`users`.`email` = 'a@example.com')"}}}
+                    """)));
+            }
             if (sql.contains("information_schema.columns")) {
                 return new QueryResult(List.of(row("column_name", "email"), row("column_name", "name")));
+            }
+            if (sql.contains("COLUMN_NAME") && sql.contains("information_schema.COLUMNS")) {
+                return new QueryResult(List.of(row("COLUMN_NAME", "email")));
             }
             if (sql.contains("pg_index") && sql.contains("unnest(i.indkey)")) {
                 return QueryResult.empty();
             }
             if (sql.contains("pg_class c") && sql.contains("pg_stats")) {
                 return new QueryResult(List.of(row("row_estimate", 1000.0, "total_width", 64)));
+            }
+            if (sql.contains("TABLE_ROWS") && sql.contains("information_schema.TABLES")) {
+                return new QueryResult(List.of(row("row_estimate", 1000, "avg_row_length", 64)));
+            }
+            if (sql.contains("STATISTICS") && sql.contains("SEQ_IN_INDEX")) {
+                return QueryResult.empty();
+            }
+            if (sql.contains("events_statements_summary_by_digest")) {
+                return new QueryResult(List.of(row(
+                    "query", "SELECT `users`.`id` , `users`.`email` FROM `users` WHERE `users`.`email` = ?",
+                    "calls", 100L,
+                    "avg_exec_time_sec", 20.0
+                )));
+            }
+            if (sql.contains("@@performance_schema")) {
+                return new QueryResult(List.of(row("enabled", 1)));
             }
             return QueryResult.empty();
         }

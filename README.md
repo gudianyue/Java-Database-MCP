@@ -1,23 +1,26 @@
 # Database MCP Java
 
-Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL 和 MySQL 的基础数据库工具；部分性能诊断能力首版仅支持 PostgreSQL。
+Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL 和 MySQL 的基础数据库工具，并提供按数据库方言实现的慢查询统计、健康检查和索引建议。
 
 ## 支持范围
 
 ### PostgreSQL
 
 - 基础工具：`execute_sql`、`list_schemas`、`list_objects`、`get_object_details`
-- 执行计划：`explain_query`
+- 执行计划：`explain_query`，支持文本执行计划；可结合 HypoPG 评估假设索引
 - 慢查询统计：`get_top_queries`，依赖 `pg_stat_statements`
-- 健康检查：`analyze_db_health`
-- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，可结合 HypoPG 评估候选索引
+- 健康检查：`analyze_db_health`，支持 `index`、`connection`、`vacuum`、`sequence`、`replication`、`buffer`、`constraint`、`all`
+- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，使用 PostgreSQL `EXPLAIN (FORMAT JSON)` 和 HypoPG 评估候选索引
 
 ### MySQL
 
 - 受控 SQL 执行：`execute_sql`
 - 结构查看：`list_schemas`、`list_objects`、`get_object_details`
-- 基础执行计划：`explain_query`
-- 慢查询统计、健康检查、索引建议：当前返回不支持说明
+- 执行计划：`explain_query`，使用 `EXPLAIN FORMAT=JSON`
+- 慢查询统计：`get_top_queries`，依赖 `performance_schema.events_statements_summary_by_digest`，支持 `mean_time` 和 `total_time`
+- 健康检查：`analyze_db_health`，支持 `index`、`connection`、`fragmentation`、`auto_increment`、`replication`、`buffer`、`constraint`、`all`
+- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，使用 MySQL `EXPLAIN FORMAT=JSON` 和规则引擎评分生成建议
+- 不支持项：`explain_query` 的 `analyze=true` 和 `hypothetical_indexes` 暂不支持
 
 ## MCP 传输
 
@@ -176,6 +179,10 @@ mvn -DskipTests package
 ```
 
 `mvn test` 会运行单元测试和 MCP 注解可见性测试。PostgreSQL 集成测试使用 Testcontainers；如果本机 Docker daemon 不可用，相关测试会自动跳过并在日志中说明原因。
+
+## 兼容性说明
+
+不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL 和 MySQL 分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 第三方来源
 

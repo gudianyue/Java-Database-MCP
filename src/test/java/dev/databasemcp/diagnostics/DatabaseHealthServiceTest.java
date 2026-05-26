@@ -14,12 +14,20 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * DatabaseHealthService 现为薄路由层，委托到 DiagnosticDialect。
+ * PG 逻辑测试在 PostgresDiagnosticDialectTest 中，MySQL 逻辑测试在 MySqlDiagnosticDialectTest 中。
+ * 此处只验证路由委托行为。
+ */
 class DatabaseHealthServiceTest {
 
     @Test
-    void defaultsToAllHealthChecks() {
+    void defaultsToAllPgHealthChecks() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        DatabaseHealthService service = new DatabaseHealthService(provider);
 
         String result = service.analyze(null);
 
@@ -31,13 +39,15 @@ class DatabaseHealthServiceTest {
             .contains("复制健康")
             .contains("缓冲区健康")
             .contains("约束健康");
-        assertThat(sqlClient.sqlCalls).anySatisfy(sql -> assertThat(sql).contains("pg_stat_activity"));
     }
 
     @Test
     void supportsCommaSeparatedHealthTypes() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        DatabaseHealthService service = new DatabaseHealthService(provider);
 
         String result = service.analyze("connection, buffer");
 
@@ -47,7 +57,11 @@ class DatabaseHealthServiceTest {
 
     @Test
     void rejectsInvalidHealthTypes() {
-        DatabaseHealthService service = new DatabaseHealthService(new RecordingSqlClient(), new DatabaseMcpProperties());
+        RecordingSqlClient sqlClient = new RecordingSqlClient();
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, new FakeExtensionService(sqlClient, true, 16));
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        DatabaseHealthService service = new DatabaseHealthService(provider);
 
         assertThatThrownBy(() -> service.analyze("storage"))
             .isInstanceOf(IllegalArgumentException.class)
@@ -55,49 +69,22 @@ class DatabaseHealthServiceTest {
     }
 
     @Test
-    void reportsIndividualCheckFailureWithoutStoppingOtherChecks() {
+    void routesToMySqlDialectForHealthCheck() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        sqlClient.failReplicationSlots = true;
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
-
-        String result = service.analyze("replication,connection");
-
-        assertThat(result).contains("复制健康").contains("检查失败");
-        assertThat(result).contains("连接健康").contains("连接健康：12 个总连接");
-    }
-
-    @Test
-    void formatsIndexWarningsFromRows() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        sqlClient.invalidIndexRows = List.of(row(
-            "schema", "public",
-            "index", "users_email_idx",
-            "table", "users"
-        ));
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient, new DatabaseMcpProperties());
-
-        String result = service.analyze("index");
-
-        assertThat(result).contains("public.users_email_idx").contains("无效");
-    }
-
-    @Test
-    void mysqlReturnsUnsupportedMessage() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.MYSQL);
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseHealthService service = new DatabaseHealthService(sqlClient, properties);
+        MySqlFeatureService featureService = new MySqlFeatureService(sqlClient);
+        MySqlDiagnosticDialect mysqlDialect = new MySqlDiagnosticDialect(sqlClient, featureService);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(mysqlDialect), properties);
+        DatabaseHealthService service = new DatabaseHealthService(provider);
 
-        String result = service.analyze("all");
+        String result = service.analyze("connection");
 
-        assertThat(result).contains("当前数据库类型 mysql 暂不支持 analyze_db_health");
-        assertThat(sqlClient.sqlCalls).isEmpty();
+        assertThat(result).contains("连接健康");
     }
 
     private static final class RecordingSqlClient implements SqlClient {
         private final List<String> sqlCalls = new ArrayList<>();
-        private boolean failReplicationSlots;
-        private List<Map<String, Object>> invalidIndexRows = List.of();
 
         @Override
         public QueryResult query(String sql) {
@@ -113,7 +100,7 @@ class DatabaseHealthServiceTest {
 
         private QueryResult route(String sql) {
             if (sql.contains("NOT i.indisvalid")) {
-                return new QueryResult(invalidIndexRows);
+                return QueryResult.empty();
             }
             if (sql.contains("pg_stat_activity") && sql.contains("idle in transaction")) {
                 return new QueryResult(List.of(row("count", 1L)));
@@ -134,12 +121,39 @@ class DatabaseHealthServiceTest {
                 return new QueryResult(List.of(row("count", 0L)));
             }
             if (sql.contains("pg_replication_slots")) {
-                if (failReplicationSlots) {
-                    throw new IllegalStateException("permission denied for pg_replication_slots");
-                }
                 return QueryResult.empty();
             }
+            if (sql.contains("PROCESSLIST") && sql.contains("Sleep")) {
+                return new QueryResult(List.of(row("count", 2L)));
+            }
+            if (sql.contains("PROCESSLIST")) {
+                return new QueryResult(List.of(row("count", 15L)));
+            }
+            if (sql.contains("performance_schema") && sql.contains("global_status")) {
+                return new QueryResult(List.of(row("value", "1000")));
+            }
             return QueryResult.empty();
+        }
+    }
+
+    private static final class FakeExtensionService extends PostgresExtensionService {
+        private final boolean installed;
+        private final int majorVersion;
+
+        private FakeExtensionService(SqlClient sqlClient, boolean installed, int majorVersion) {
+            super(sqlClient);
+            this.installed = installed;
+            this.majorVersion = majorVersion;
+        }
+
+        @Override
+        public boolean isExtensionInstalled(String extensionName) {
+            return installed;
+        }
+
+        @Override
+        public int postgresMajorVersion() {
+            return majorVersion;
         }
     }
 

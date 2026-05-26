@@ -65,7 +65,7 @@ class MySqlDatabaseDialectTest {
 
         dialect.explain("SELECT * FROM users");
 
-        assertThat(sqlClient.lastSql).isEqualTo("EXPLAIN SELECT * FROM users");
+        assertThat(sqlClient.lastSql).isEqualTo("EXPLAIN FORMAT=JSON SELECT * FROM users");
     }
 
     private static final class RecordingSqlClient implements SqlClient {

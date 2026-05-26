@@ -1,7 +1,6 @@
 package dev.databasemcp.diagnostics;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
@@ -13,73 +12,26 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * TopQueriesService 现为薄路由层，委托到 DiagnosticDialect。
+ * PG 逻辑测试在 PostgresDiagnosticDialectTest 中，MySQL 逻辑测试在 MySqlDiagnosticDialectTest 中。
+ * 此处只验证路由委托行为。
+ */
 class TopQueriesServiceTest {
 
     @Test
-    void usesPg13TimingColumnsForMeanTime() {
+    void delegatesToDiagnosticDialect() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        PostgresExtensionService extService = new FakeExtensionService(sqlClient, true, 16);
+        PostgresDiagnosticDialect pgDialect = new PostgresDiagnosticDialect(sqlClient, extService);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(List.of(pgDialect), properties);
+        TopQueriesService service = new TopQueriesService(provider);
 
         String result = service.getTopQueries("mean_time", 5);
 
         assertThat(sqlClient.lastSql).contains("mean_exec_time").contains("ORDER BY mean_exec_time DESC");
-        assertThat(sqlClient.lastParams).containsExactlyElementsOf(List.of(5));
         assertThat(result).contains("单次平均执行时间").contains("SELECT * FROM users");
-    }
-
-    @Test
-    void usesPg12TimingColumnsForTotalTime() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 12), new DatabaseMcpProperties());
-
-        service.getTopQueries("total_time", 3);
-
-        assertThat(sqlClient.lastSql).contains("total_time").contains("ORDER BY total_time DESC");
-        assertThat(sqlClient.lastParams).containsExactlyElementsOf(List.of(3));
-    }
-
-    @Test
-    void resourceQueryUsesWalBytesForPg13() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
-
-        service.getTopQueries("resources", 10);
-
-        assertThat(sqlClient.lastSql).contains("wal_bytes").contains("total_exec_time_frac");
-    }
-
-    @Test
-    void returnsInstallMessageWhenPgStatStatementsIsMissing() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, false, 16), new DatabaseMcpProperties());
-
-        String result = service.getTopQueries("resources", 10);
-
-        assertThat(result).contains("pg_stat_statements 扩展").contains("CREATE EXTENSION pg_stat_statements");
-        assertThat(sqlClient.lastSql).isNull();
-    }
-
-    @Test
-    void rejectsInvalidSortCriteria() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), new DatabaseMcpProperties());
-
-        assertThatThrownBy(() -> service.getTopQueries("calls", 10))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("无效排序条件");
-    }
-
-    @Test
-    void mysqlReturnsUnsupportedMessage() {
-        RecordingSqlClient sqlClient = new RecordingSqlClient();
-        DatabaseMcpProperties properties = new DatabaseMcpProperties();
-        properties.setDatabaseType(DatabaseType.MYSQL);
-        TopQueriesService service = new TopQueriesService(sqlClient, new FakeExtensionService(sqlClient, true, 16), properties);
-
-        String result = service.getTopQueries("resources", 10);
-
-        assertThat(result).contains("当前数据库类型 mysql 暂不支持 get_top_queries");
-        assertThat(sqlClient.lastSql).isNull();
     }
 
     private static final class RecordingSqlClient implements SqlClient {
