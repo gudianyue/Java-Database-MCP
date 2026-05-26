@@ -57,32 +57,64 @@ public class MySqlDatabaseDialect implements DatabaseDialect {
         return switch (objectType) {
             case "table", "view" -> sqlClient.query("""
                 SELECT
-                    c.TABLE_SCHEMA AS schema_name,
-                    c.TABLE_NAME AS object_name,
-                    c.COLUMN_NAME AS column_name,
-                    c.DATA_TYPE AS data_type,
-                    c.IS_NULLABLE AS is_nullable,
-                    c.COLUMN_DEFAULT AS column_default,
-                    c.COLUMN_KEY AS column_key,
-                    kcu.CONSTRAINT_NAME AS constraint_name,
-                    kcu.REFERENCED_TABLE_SCHEMA AS referenced_table_schema,
-                    kcu.REFERENCED_TABLE_NAME AS referenced_table_name,
-                    kcu.REFERENCED_COLUMN_NAME AS referenced_column_name,
-                    s.INDEX_NAME AS index_name,
-                    s.NON_UNIQUE AS non_unique,
-                    s.SEQ_IN_INDEX AS sequence_in_index
-                FROM information_schema.COLUMNS c
-                LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu
-                    ON c.TABLE_SCHEMA = kcu.TABLE_SCHEMA
-                   AND c.TABLE_NAME = kcu.TABLE_NAME
-                   AND c.COLUMN_NAME = kcu.COLUMN_NAME
-                LEFT JOIN information_schema.STATISTICS s
-                    ON c.TABLE_SCHEMA = s.TABLE_SCHEMA
-                   AND c.TABLE_NAME = s.TABLE_NAME
-                   AND c.COLUMN_NAME = s.COLUMN_NAME
-                WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ?
-                ORDER BY c.ORDINAL_POSITION, s.INDEX_NAME, s.SEQ_IN_INDEX
-                """, List.of(schemaName, objectName));
+                    ? AS schema_name,
+                    ? AS object_name,
+                    COALESCE(
+                        (SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                            'column', c.COLUMN_NAME,
+                            'data_type', c.DATA_TYPE,
+                            'is_nullable', c.IS_NULLABLE,
+                            'default', c.COLUMN_DEFAULT,
+                            'column_key', c.COLUMN_KEY
+                        ) ORDER BY c.ORDINAL_POSITION)
+                        FROM information_schema.COLUMNS c
+                        WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME),
+                        JSON_ARRAY()
+                    ) AS columns,
+                    COALESCE(
+                        (SELECT JSON_ARRAYAGG(constraint_obj)
+                        FROM (
+                            SELECT JSON_OBJECT(
+                                'name', kcu.CONSTRAINT_NAME,
+                                'columns', (SELECT JSON_ARRAYAGG(kcu2.COLUMN_NAME ORDER BY kcu2.ORDINAL_POSITION)
+                                    FROM information_schema.KEY_COLUMN_USAGE kcu2
+                                    WHERE kcu2.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+                                      AND kcu2.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                                      AND kcu2.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                                      AND kcu2.TABLE_NAME = kcu.TABLE_NAME),
+                                'referenced_table_schema', kcu.REFERENCED_TABLE_SCHEMA,
+                                'referenced_table_name', kcu.REFERENCED_TABLE_NAME,
+                                'referenced_column_name', kcu.REFERENCED_COLUMN_NAME
+                            ) AS constraint_obj
+                            FROM information_schema.KEY_COLUMN_USAGE kcu
+                            WHERE kcu.TABLE_SCHEMA = t.TABLE_SCHEMA AND kcu.TABLE_NAME = t.TABLE_NAME
+                            GROUP BY kcu.CONSTRAINT_SCHEMA, kcu.CONSTRAINT_NAME,
+                                kcu.TABLE_SCHEMA, kcu.TABLE_NAME,
+                                kcu.REFERENCED_TABLE_SCHEMA, kcu.REFERENCED_TABLE_NAME,
+                                kcu.REFERENCED_COLUMN_NAME
+                            ORDER BY kcu.CONSTRAINT_NAME
+                        ) constraints_sub),
+                        JSON_ARRAY()
+                    ) AS constraints,
+                    COALESCE(
+                        (SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                            'name', s.INDEX_NAME,
+                            'non_unique', s.NON_UNIQUE,
+                            'columns', (SELECT JSON_ARRAYAGG(s2.COLUMN_NAME ORDER BY s2.SEQ_IN_INDEX)
+                                FROM information_schema.STATISTICS s2
+                                WHERE s2.TABLE_SCHEMA = s.TABLE_SCHEMA
+                                  AND s2.TABLE_NAME = s.TABLE_NAME
+                                  AND s2.INDEX_NAME = s.INDEX_NAME)
+                        ))
+                        FROM (SELECT DISTINCT s0.TABLE_SCHEMA, s0.TABLE_NAME, s0.INDEX_NAME, s0.NON_UNIQUE
+                              FROM information_schema.STATISTICS s0
+                              WHERE s0.TABLE_SCHEMA = t.TABLE_SCHEMA AND s0.TABLE_NAME = t.TABLE_NAME
+                              ORDER BY s0.INDEX_NAME) s),
+                        JSON_ARRAY()
+                    ) AS indexes
+                FROM information_schema.TABLES t
+                WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ? AND t.TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+                """, List.of(schemaName, objectName, schemaName, objectName));
             case "sequence" -> throw new UnsupportedOperationException(
                 "MySQL 不支持 PostgreSQL 风格的 sequence 对象。"
             );
