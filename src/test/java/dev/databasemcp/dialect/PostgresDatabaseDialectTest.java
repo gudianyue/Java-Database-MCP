@@ -30,7 +30,7 @@ class PostgresDatabaseDialectTest {
         assertThat(sqlClient.lastSql).contains("pg_extension");
 
         dialect.getObjectDetails("public", "users", "table");
-        assertThat(sqlClient.lastSql).contains("json_build_object").contains("pg_indexes");
+        assertThat(sqlClient.lastSql).contains("json_build_object").contains("pg_catalog.pg_attribute");
     }
 
     @Test

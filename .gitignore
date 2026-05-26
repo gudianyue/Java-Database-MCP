@@ -12,3 +12,4 @@ target/
 Thumbs.db
 docs/superpowers
 .worktrees/
+.omx/
