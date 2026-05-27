@@ -31,6 +31,11 @@ class PostgresDatabaseDialectTest {
 
         dialect.getObjectDetails("public", "users", "table");
         assertThat(sqlClient.lastSql).contains("json_build_object").contains("pg_catalog.pg_attribute");
+        String compactSql = sqlClient.lastSql.replaceAll("\\s+", " ");
+        assertThat(compactSql)
+            .contains("json_agg(json_build_object( 'name', con.conname")
+            .contains(") ORDER BY con.conname) FILTER (WHERE con.conname IS NOT NULL)")
+            .doesNotContain(") FILTER (WHERE con.conname IS NOT NULL))");
     }
 
     @Test

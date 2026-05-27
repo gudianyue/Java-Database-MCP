@@ -97,7 +97,7 @@ public class PostgresDatabaseDialect implements DatabaseDialect {
                             'columns', (SELECT json_agg(att.attname ORDER BY s.i)
                                 FROM unnest(con.conkey) WITH ORDINALITY AS s(attnum, i)
                                 JOIN pg_catalog.pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = s.attnum)
-                        ) FILTER (WHERE con.conname IS NOT NULL))
+                        ) ORDER BY con.conname) FILTER (WHERE con.conname IS NOT NULL)
                         FROM pg_catalog.pg_constraint con
                         WHERE con.conrelid = c.oid),
                         '[]'::json
