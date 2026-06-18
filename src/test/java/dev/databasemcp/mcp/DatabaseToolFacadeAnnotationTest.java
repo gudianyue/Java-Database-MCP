@@ -32,11 +32,11 @@ class DatabaseToolFacadeAnnotationTest {
     }
 
     @Test
-    void describesTopQueriesWithGenericDatabaseMcpLanguage() throws NoSuchMethodException {
+    void topQueriesDescriptionUsesGenericDatabaseLanguage() throws NoSuchMethodException {
         McpTool annotation = DatabaseToolFacade.class
             .getDeclaredMethod("getTopQueries", String.class, Integer.class)
             .getAnnotation(McpTool.class);
 
-        assertThat(annotation.description()).isEqualTo("报告慢查询或资源消耗较高的查询；当前 PostgreSQL 模式基于 pg_stat_statements");
+        assertThat(annotation.description()).isEqualTo("按当前数据库方言报告慢查询或资源消耗较高的查询");
     }
 }

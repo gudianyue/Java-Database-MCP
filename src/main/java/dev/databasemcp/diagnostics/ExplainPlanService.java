@@ -39,19 +39,26 @@ public class ExplainPlanService {
             throw new IllegalArgumentException("SQL 不能为空");
         }
         if (analyze && !indexes.isEmpty()) {
-            throw new IllegalArgumentException("不能同时使用 analyze 和 hypothetical_indexes");
+            throw new IllegalArgumentException("analyze 和 hypothetical_indexes 不能同时使用");
         }
         DatabaseDialect dialect = dialectProvider.current();
         if (dialect.databaseType() != DatabaseType.POSTGRESQL) {
             if (analyze) {
-                return dialect.databaseType() == DatabaseType.MYSQL
-                    ? "MySQL 暂不支持 analyze=true；请使用 analyze=false 获取基础 EXPLAIN。"
-                    : "当前数据库类型暂不支持 analyze=true；请使用 analyze=false 获取基础 EXPLAIN。";
+                return switch (dialect.databaseType()) {
+                    case MYSQL -> "当前 MCP 工具的 MySQL 分支不支持 analyze=true；请使用 analyze=false 查看基础 EXPLAIN 计划。";
+                    case DAMENG -> "当前 MCP 工具的达梦分支不支持 analyze=true；请使用 analyze=false 查看基础 EXPLAIN 计划。";
+                    default -> "当前数据库类型不支持 analyze=true。";
+                };
             }
             if (!indexes.isEmpty()) {
-                return dialect.databaseType() == DatabaseType.MYSQL
-                    ? "MySQL 暂不支持 hypothetical_indexes。"
-                    : "当前数据库类型暂不支持 hypothetical_indexes。";
+                return switch (dialect.databaseType()) {
+                    case MYSQL -> "MySQL 分支不支持 hypothetical_indexes。";
+                    case DAMENG -> "达梦分支不支持 hypothetical_indexes。";
+                    default -> "当前数据库类型不支持 hypothetical_indexes。";
+                };
+            }
+            if (dialect.databaseType() == DatabaseType.DAMENG) {
+                ReadOnlyQueryValidator.validateSelectSingleStatement(sql);
             }
             return renderRows(dialect.explain(sql));
         }
@@ -115,10 +122,10 @@ public class ExplainPlanService {
         Object columns = index.get("columns");
         Object using = index.getOrDefault("using", "btree");
         if (table == null || String.valueOf(table).isBlank()) {
-            throw new IllegalArgumentException("hypothetical_indexes 中的 table 不能为空");
+            throw new IllegalArgumentException("hypothetical_indexes 的 table 不能为空");
         }
         if (!(columns instanceof List<?> columnList) || columnList.isEmpty()) {
-            throw new IllegalArgumentException("hypothetical_indexes 中的 columns 必须是非空列表");
+            throw new IllegalArgumentException("hypothetical_indexes 的 columns 必须是非空列表");
         }
         String method = String.valueOf(using).toLowerCase(Locale.ROOT);
         if (!INDEX_METHODS.contains(method)) {
@@ -149,17 +156,17 @@ public class ExplainPlanService {
         String normalized = sql.stripLeading().toLowerCase(Locale.ROOT);
         String firstWord = normalized.split("\\s+", 2)[0];
         if (ANALYZE_BLOCKED_FIRST_WORDS.contains(firstWord)) {
-            throw new IllegalArgumentException("EXPLAIN ANALYZE 不允许执行 " + firstWord.toUpperCase(Locale.ROOT) + " 语句");
+            throw new IllegalArgumentException("EXPLAIN ANALYZE 不能执行 " + firstWord.toUpperCase(Locale.ROOT) + " 语句");
         }
     }
 
     private static String hypopgInstallMessage() {
         return """
-            hypopg 扩展是测试假设索引所必需的，但当前数据库尚未安装。
+            评估假设索引需要 hypopg 扩展，但当前数据库未安装。
 
-            可以在数据库中执行：CREATE EXTENSION hypopg;
+            可在 PostgreSQL 中执行以下语句安装：CREATE EXTENSION hypopg;
 
-            它通常用于索引方案评估，只创建会话级的假设索引，不会真正创建物理索引。
+            hypopg 只创建会话级假设索引用于计划评估，不会创建物理索引。
             """.strip();
     }
 }

@@ -1,6 +1,6 @@
 # Database MCP Java
 
-Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL 和 MySQL 的基础数据库工具，并提供按数据库方言实现的慢查询统计、健康检查和索引建议。
+Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL、MySQL 和达梦数据库的基础数据库工具，并提供按数据库方言实现的慢查询统计、健康检查和索引建议。
 
 ## 支持范围
 
@@ -21,6 +21,15 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 - 健康检查：`analyze_db_health`，支持 `index`、`connection`、`fragmentation`、`auto_increment`、`replication`、`buffer`、`constraint`、`all`
 - 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，使用 MySQL `EXPLAIN FORMAT=JSON` 和规则引擎评分生成建议
 - 不支持项：`explain_query` 的 `analyze=true` 和 `hypothetical_indexes` 暂不支持
+
+### 达梦数据库
+
+- 基础工具：`execute_sql`、`list_schemas`、`list_objects`、`get_object_details`
+- 执行计划：`explain_query`，使用达梦 `EXPLAIN`
+- 慢查询统计：`get_top_queries`，优先读取 `V$SQL_HISTORY`，支持 `mean_time`、`total_time`、`executions`
+- 健康检查：`analyze_db_health`，支持 `index`、`connection`、`wait`、`storage`、`sequence`、`buffer`、`constraint`、`all`
+- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，只做只读分析和建议输出，不自动创建索引
+- 不支持项：`extension` 对象、`analyze=true`、`hypothetical_indexes`、`method='llm'` 暂不支持
 
 ## MCP 传输
 
@@ -117,6 +126,46 @@ DATABASE_USERNAME=root
 DATABASE_PASSWORD=secret
 ```
 
+### 达梦数据库示例
+
+使用规范的数据库类型值 `dameng`。拆分配置的默认端口是 `5236`，完整 JDBC URL 使用 `jdbc:dm://` 前缀。
+
+完整 JDBC URL：
+
+```bash
+DATABASE_TYPE=dameng
+DATABASE_URI=jdbc:dm://localhost:5236/app
+DATABASE_USERNAME=app_user
+DATABASE_PASSWORD=<password>
+```
+
+拆分配置：
+
+```bash
+DATABASE_TYPE=dameng
+DATABASE_HOST=localhost
+DATABASE_PORT=5236
+DATABASE_NAME=app
+DATABASE_USERNAME=app_user
+DATABASE_PASSWORD=<password>
+```
+
+达梦支持使用当前 Java 21 项目选定的达梦 JDBC 驱动依赖 `com.dameng:DmJdbcDriver11`。诊断工具均按只读方式实现；如果当前用户无法访问某些达梦系统视图，对应诊断项会返回退化说明，其它可执行项继续返回结果。
+
+真实达梦实例冒烟测试默认跳过。需要验证所有 MCP 工具时，可显式启用：
+
+```bash
+DAMENG_SMOKE_ENABLED=true
+DAMENG_SMOKE_URI=jdbc:dm://localhost:5236/app
+DAMENG_SMOKE_USERNAME=app_user
+DAMENG_SMOKE_PASSWORD=<password>
+mvn -q -Dtest=DamengMcpSmokeTest test
+```
+
+也可以使用拆分连接参数：`DAMENG_SMOKE_HOST`、`DAMENG_SMOKE_PORT`、`DAMENG_SMOKE_DATABASE`、`DAMENG_SMOKE_USERNAME`、`DAMENG_SMOKE_PASSWORD`。如果实例中没有普通业务表，可额外设置 `DAMENG_SMOKE_SCHEMA` 和 `DAMENG_SMOKE_TABLE` 指定一个当前用户可见的表。该冒烟测试只执行只读 SQL，不会创建索引或写入数据。
+
+如果 JDBC URL 中未包含账号密码，也可以同时设置 `DAMENG_SMOKE_USERNAME` 和 `DAMENG_SMOKE_PASSWORD`。
+
 ## Docker
 
 构建镜像：
@@ -182,7 +231,7 @@ mvn -DskipTests package
 
 ## 兼容性说明
 
-不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL 和 MySQL 分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
+不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL、MySQL 和达梦数据库分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 第三方来源
 

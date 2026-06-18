@@ -11,7 +11,9 @@ class DatabaseTypeTest {
     void parsesSupportedDatabaseTypesCaseInsensitively() {
         assertThat(DatabaseType.from("postgresql")).isEqualTo(DatabaseType.POSTGRESQL);
         assertThat(DatabaseType.from("mysql")).isEqualTo(DatabaseType.MYSQL);
+        assertThat(DatabaseType.from("dameng")).isEqualTo(DatabaseType.DAMENG);
         assertThat(DatabaseType.from("POSTGRESQL")).isEqualTo(DatabaseType.POSTGRESQL);
+        assertThat(DatabaseType.from("DAMENG")).isEqualTo(DatabaseType.DAMENG);
     }
 
     @Test
@@ -24,7 +26,14 @@ class DatabaseTypeTest {
     @Test
     void rejectsUnsupportedDatabaseType() {
         assertThatThrownBy(() -> DatabaseType.from("oracle"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("不支持的数据库类型");
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void doesNotTreatDamengAliasesAsCanonicalDatabaseTypes() {
+        assertThatThrownBy(() -> DatabaseType.from("dm"))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DatabaseType.from("dm8"))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 }

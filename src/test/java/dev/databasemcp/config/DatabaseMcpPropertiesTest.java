@@ -62,6 +62,17 @@ class DatabaseMcpPropertiesTest {
     }
 
     @Test
+    void buildsDamengJdbcUrlWithDefaultPortFromSplitConfiguration() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.DAMENG);
+        properties.setDatabaseHost("dameng");
+        properties.setDatabaseName("appdb");
+
+        assertThat(properties.getDatabasePort()).isEqualTo(5236);
+        assertThat(properties.resolvedJdbcUrl()).isEqualTo("jdbc:dm://dameng:5236/appdb");
+    }
+
+    @Test
     void returnsBlankJdbcUrlWhenHostOrDatabaseNameAreMissing() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseHost("postgres");

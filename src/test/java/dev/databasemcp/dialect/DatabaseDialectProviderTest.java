@@ -27,6 +27,21 @@ class DatabaseDialectProviderTest {
     }
 
     @Test
+    void currentSelectsDamengDialectWhenPropertiesUseDameng() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.DAMENG);
+        DatabaseDialect damengDialect = new StubDatabaseDialect(DatabaseType.DAMENG);
+        DatabaseDialect postgresqlDialect = new StubDatabaseDialect(DatabaseType.POSTGRESQL);
+
+        DatabaseDialectProvider provider = new DatabaseDialectProvider(
+            properties,
+            List.of(postgresqlDialect, damengDialect)
+        );
+
+        assertThat(provider.current()).isSameAs(damengDialect);
+    }
+
+    @Test
     void currentThrowsWhenNoDialectMatchesProperties() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.MYSQL);

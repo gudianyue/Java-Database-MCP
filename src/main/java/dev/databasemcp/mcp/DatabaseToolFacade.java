@@ -41,7 +41,7 @@ public class DatabaseToolFacade {
         this.mapper = mapper;
     }
 
-    @McpTool(name = "list_schemas", description = "列出数据库中的所有 schema")
+    @McpTool(name = "list_schemas", description = "列出当前数据库连接可见的 schema")
     public String listSchemas() {
         try {
             return mapper.toText(schemaService.listSchemas());
@@ -50,10 +50,10 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "list_objects", description = "列出指定 schema 下的对象")
+    @McpTool(name = "list_objects", description = "列出指定 schema 下的数据库对象")
     public String listObjects(
         @McpToolParam(description = "Schema 名称") String schemaName,
-        @McpToolParam(description = "对象类型：'table'、'view'、'sequence' 或 'extension'") String objectType
+        @McpToolParam(description = "对象类型：table、view、sequence 或 extension") String objectType
     ) {
         try {
             return mapper.toText(schemaService.listObjects(schemaName, objectType == null || objectType.isBlank() ? "table" : objectType));
@@ -66,7 +66,7 @@ public class DatabaseToolFacade {
     public String getObjectDetails(
         @McpToolParam(description = "Schema 名称") String schemaName,
         @McpToolParam(description = "对象名称") String objectName,
-        @McpToolParam(description = "对象类型：'table'、'view'、'sequence' 或 'extension'") String objectType
+        @McpToolParam(description = "对象类型：table、view、sequence 或 extension") String objectType
     ) {
         try {
             return mapper.toText(schemaService.getObjectDetails(schemaName, objectName, objectType == null || objectType.isBlank() ? "table" : objectType));
@@ -75,7 +75,7 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "execute_sql", description = "按照配置的访问模式执行 SQL")
+    @McpTool(name = "execute_sql", description = "按照当前访问模式执行 SQL")
     public String executeSql(@McpToolParam(description = "要执行的 SQL") String sql) {
         try {
             return mapper.toText(sqlClient.query(sql));
@@ -84,11 +84,11 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "explain_query", description = "查看 SQL 查询的执行计划和成本估算")
+    @McpTool(name = "explain_query", description = "查看 SQL 查询的执行计划")
     public String explainQuery(
         @McpToolParam(description = "要解释的 SQL 查询") String sql,
-        @McpToolParam(description = "为 true 时实际执行查询并返回真实执行统计；默认 false") Boolean analyze,
-        @McpToolParam(description = "要模拟的假设索引列表；没有假设索引时传空列表") List<Map<String, Object>> hypotheticalIndexes
+        @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
+        @McpToolParam(description = "在支持的数据库上评估的假设索引；不需要时传空列表") List<Map<String, Object>> hypotheticalIndexes
     ) {
         try {
             return explainPlanService.explain(sql, Boolean.TRUE.equals(analyze), hypotheticalIndexes);
@@ -97,10 +97,10 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "get_top_queries", description = "报告慢查询或资源消耗较高的查询；当前 PostgreSQL 模式基于 pg_stat_statements")
+    @McpTool(name = "get_top_queries", description = "按当前数据库方言报告慢查询或资源消耗较高的查询")
     public String getTopQueries(
-        @McpToolParam(description = "排序条件：'resources'、'mean_time' 或 'total_time'；默认 resources") String sortBy,
-        @McpToolParam(description = "按 mean_time 或 total_time 排序时返回的查询数量；默认 10") Integer limit
+        @McpToolParam(description = "排序字段，例如 resources、mean_time、total_time，或数据库方言支持的字段") String sortBy,
+        @McpToolParam(description = "最多返回的查询数量；默认 10") Integer limit
     ) {
         try {
             return topQueriesService.getTopQueries(sortBy, limit == null ? 10 : limit);
@@ -109,10 +109,9 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "analyze_db_health", description = "分析数据库健康状态，可检查索引、连接、vacuum、序列、复制、缓冲区和约束")
+    @McpTool(name = "analyze_db_health", description = "使用当前数据库方言的只读检查分析数据库健康状态")
     public String analyzeDbHealth(
-        @McpToolParam(description = "健康检查类型：index、connection、vacuum、sequence、replication、buffer、constraint、all；可用逗号组合，默认 all")
-        String healthType
+        @McpToolParam(description = "健康检查类型或逗号分隔的类型列表；默认 all") String healthType
     ) {
         try {
             return databaseHealthService.analyze(healthType == null || healthType.isBlank() ? "all" : healthType);
@@ -121,10 +120,10 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "analyze_workload_indexes", description = "分析数据库工作负载并推荐索引")
+    @McpTool(name = "analyze_workload_indexes", description = "分析工作负载查询并给出索引建议")
     public String analyzeWorkloadIndexes(
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
-        @McpToolParam(description = "分析方法：'dta' 或 'llm'；当前 Java 版本优先实现 dta") String method
+        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method
     ) {
         try {
             return indexAdvisorService.analyzeWorkloadIndexes(maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
@@ -133,11 +132,11 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "analyze_query_indexes", description = "分析最多 10 条 SQL 查询并推荐索引")
+    @McpTool(name = "analyze_query_indexes", description = "分析最多 10 条 SQL 查询并给出索引建议")
     public String analyzeQueryIndexes(
         @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
-        @McpToolParam(description = "分析方法：'dta' 或 'llm'；当前 Java 版本优先实现 dta") String method
+        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method
     ) {
         try {
             return indexAdvisorService.analyzeQueryIndexes(queries, maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);

@@ -37,6 +37,16 @@ class DiagnosticDialectProviderTest {
     }
 
     @Test
+    void selectsDamengDialectWhenConfigured() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.DAMENG);
+        DiagnosticDialect damengDialect = new StubDiagnosticDialect(DatabaseType.DAMENG);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(new ArrayList<>(List.of(damengDialect)), properties);
+
+        assertThat(provider.current().databaseType()).isEqualTo(DatabaseType.DAMENG);
+    }
+
+    @Test
     void throwsWhenNoDialectMatches() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.MYSQL);
@@ -72,6 +82,43 @@ class DiagnosticDialectProviderTest {
         @Override
         public int postgresMajorVersion() {
             return 16;
+        }
+    }
+
+    private record StubDiagnosticDialect(DatabaseType databaseType) implements DiagnosticDialect {
+        @Override
+        public java.util.Set<String> supportedTopQuerySortBy() {
+            return java.util.Set.of();
+        }
+
+        @Override
+        public java.util.Set<String> supportedHealthTypes() {
+            return java.util.Set.of();
+        }
+
+        @Override
+        public boolean supportsHypotheticalIndexes() {
+            return false;
+        }
+
+        @Override
+        public String getTopQueries(String sortBy, int limit) {
+            return "";
+        }
+
+        @Override
+        public String analyzeHealth(String healthType) {
+            return "";
+        }
+
+        @Override
+        public String analyzeWorkloadIndexes(int maxIndexSizeMb, String method) {
+            return "";
+        }
+
+        @Override
+        public String analyzeQueryIndexes(java.util.List<String> queries, int maxIndexSizeMb, String method) {
+            return "";
         }
     }
 }
