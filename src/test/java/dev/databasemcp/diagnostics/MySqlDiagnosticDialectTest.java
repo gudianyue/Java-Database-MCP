@@ -21,26 +21,6 @@ class MySqlDiagnosticDialectTest {
     }
 
     @Test
-    void supportedTopQuerySortByExcludesResources() {
-        MySqlDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-        assertThat(dialect.supportedTopQuerySortBy()).containsExactly("mean_time", "total_time");
-    }
-
-    @Test
-    void supportedHealthTypesIncludesMysqlSpecificTypes() {
-        MySqlDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-        assertThat(dialect.supportedHealthTypes())
-            .contains("index", "connection", "fragmentation", "auto_increment",
-                       "replication", "buffer", "constraint", "all");
-    }
-
-    @Test
-    void doesNotSupportHypotheticalIndexes() {
-        MySqlDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-        assertThat(dialect.supportsHypotheticalIndexes()).isFalse();
-    }
-
-    @Test
     void getTopQueriesReturnsInstallMessageWhenPerformanceSchemaDisabled() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
         sqlClient.perfSchemaEnabled = false;

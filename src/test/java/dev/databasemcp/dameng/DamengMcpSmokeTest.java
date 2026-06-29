@@ -5,17 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.diagnostics.DamengDiagnosticDialect;
-import dev.databasemcp.diagnostics.DatabaseHealthService;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
-import dev.databasemcp.diagnostics.IndexAdvisorService;
 import dev.databasemcp.diagnostics.PostgresExtensionService;
-import dev.databasemcp.diagnostics.TopQueriesService;
 import dev.databasemcp.dialect.DamengDatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.mcp.DatabaseToolFacade;
-import dev.databasemcp.mcp.ToolResponseMapper;
-import dev.databasemcp.schema.SchemaIntrospectionService;
 import dev.databasemcp.sql.JdbcSqlClient;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.RestrictedSqlGuard;
@@ -94,13 +89,10 @@ class DamengMcpSmokeTest {
             properties
         );
         return new DatabaseToolFacade(
-            new SchemaIntrospectionService(databaseDialectProvider),
+            databaseDialectProvider,
             sqlClient,
             new ExplainPlanService(sqlClient, new PostgresExtensionService(sqlClient), databaseDialectProvider),
-            new TopQueriesService(diagnosticDialectProvider),
-            new DatabaseHealthService(diagnosticDialectProvider),
-            new IndexAdvisorService(diagnosticDialectProvider),
-            new ToolResponseMapper()
+            diagnosticDialectProvider
         );
     }
 

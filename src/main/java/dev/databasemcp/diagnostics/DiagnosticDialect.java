@@ -2,7 +2,6 @@ package dev.databasemcp.diagnostics;
 
 import dev.databasemcp.config.DatabaseType;
 import java.util.List;
-import java.util.Set;
 
 /**
  * 诊断方言接口，将数据库引擎特定的诊断逻辑从 Service 层解耦。
@@ -12,21 +11,6 @@ import java.util.Set;
 public interface DiagnosticDialect {
 
     DatabaseType databaseType();
-
-    /**
-     * 该方言支持的慢查询排序方式。
-     */
-    Set<String> supportedTopQuerySortBy();
-
-    /**
-     * 该方言支持的健康检查类型。
-     */
-    Set<String> supportedHealthTypes();
-
-    /**
-     * 该方言是否支持假设索引评估。
-     */
-    boolean supportsHypotheticalIndexes();
 
     String getTopQueries(String sortBy, int limit);
 

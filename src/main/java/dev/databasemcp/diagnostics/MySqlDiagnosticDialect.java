@@ -1,5 +1,17 @@
 package dev.databasemcp.diagnostics;
 
+import static dev.databasemcp.diagnostics.DiagnosticSupport.firstValue;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.isSelect;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.megabytes;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.number;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.qualified;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.round;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLongFromRow;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.usesLlm;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,9 +45,6 @@ import org.springframework.stereotype.Component;
 public class MySqlDiagnosticDialect implements DiagnosticDialect {
 
     private static final long MYSQL_PERFORMANCE_SCHEMA_TIMER_DIVISOR = 1_000_000_000_000L;
-    private static final Set<String> MYSQL_TOP_QUERY_SORT_BY = Collections.unmodifiableSet(
-        new LinkedHashSet<>(List.of("mean_time", "total_time"))
-    );
     private static final Set<String> MYSQL_HEALTH_TYPES = Collections.unmodifiableSet(
         new LinkedHashSet<>(List.of(
             "index", "connection", "fragmentation", "auto_increment", "replication", "buffer", "constraint", "all"
@@ -54,21 +64,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
     @Override
     public DatabaseType databaseType() {
         return DatabaseType.MYSQL;
-    }
-
-    @Override
-    public Set<String> supportedTopQuerySortBy() {
-        return MYSQL_TOP_QUERY_SORT_BY;
-    }
-
-    @Override
-    public Set<String> supportedHealthTypes() {
-        return MYSQL_HEALTH_TYPES;
-    }
-
-    @Override
-    public boolean supportsHypotheticalIndexes() {
-        return false;
     }
 
     // ==================== 慢查询统计 ====================
@@ -847,79 +842,9 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
         }
     }
 
-    private static String joinRows(List<Map<String, Object>> rows, RowFormatter formatter) {
-        return String.join(System.lineSeparator(), rows.stream().map(formatter::format).toList());
-    }
-
-    private static Object firstValue(QueryResult result, String column) {
-        if (result.rows().isEmpty()) {
-            return null;
-        }
-        return result.rows().getFirst().get(column);
-    }
-
-    private static long singleLong(QueryResult result, String column) {
-        Object value = firstValue(result, column);
-        if (value == null) {
-            return 0L;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return Long.parseLong(String.valueOf(value));
-    }
-
-    private static long singleLongFromRow(Map<String, Object> row, String column) {
-        Object value = row.get(column);
-        if (value == null) {
-            return 0L;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.parseLong(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            return 0L;
-        }
-    }
-
-    private static BigDecimal number(Object value) {
-        if (value instanceof BigDecimal decimal) {
-            return decimal;
-        }
-        if (value instanceof Number numeric) {
-            return BigDecimal.valueOf(numeric.doubleValue());
-        }
-        return new BigDecimal(String.valueOf(value));
-    }
-
-    private static String megabytes(Object bytes) {
-        return number(bytes).divide(BigDecimal.valueOf(1024L * 1024L), 1, RoundingMode.HALF_UP).toPlainString();
-    }
-
-    private static String qualified(Map<String, Object> row, String schemaKey, String nameKey) {
-        return row.get(schemaKey) + "." + row.get(nameKey);
-    }
-
-    private static boolean truthy(Object value) {
-        return Boolean.TRUE.equals(value)
-            || "true".equalsIgnoreCase(String.valueOf(value))
-            || "1".equals(String.valueOf(value))
-            || (value instanceof Number number && number.longValue() == 1L);
-    }
-
-    private static boolean isSelect(String sql) {
-        return sql != null && sql.stripLeading().toLowerCase(Locale.ROOT).startsWith("select");
-    }
-
-    private static boolean usesLlm(String method) {
-        return "llm".equalsIgnoreCase(method == null || method.isBlank() ? "dta" : method);
-    }
-
     private static String definition(TableRef table, List<String> columns) {
         String name = "mcp_idx_" + table.name() + "_" + String.join("_", columns);
-        String renderedColumns = columns.stream().map(MySqlDiagnosticDialect::quoteIdentifier).reduce((left, right) -> left + ", " + right).orElseThrow();
+        String renderedColumns = columns.stream().map(MySqlDiagnosticDialect::quoteIdentifier).collect(Collectors.joining(", "));
         return "CREATE INDEX " + quoteIdentifier(name) + " ON " + table.qualifiedQuotedName() + " (" + renderedColumns + ")";
     }
 
@@ -930,13 +855,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
         return "`" + value.replace("`", "``") + "`";
     }
 
-    private static String round(double value) {
-        if (Double.isInfinite(value) || Double.isNaN(value)) {
-            return String.valueOf(value);
-        }
-        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP).toPlainString();
-    }
-
     private static String llmDeferredMessage() {
         return "LLM 索引优化方法保留为后续阶段接入；当前 MySQL 版本已实现 method='dta'（规则引擎评分）。";
     }
@@ -944,11 +862,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
     @FunctionalInterface
     private interface HealthCheck {
         String run();
-    }
-
-    @FunctionalInterface
-    private interface RowFormatter {
-        String format(Map<String, Object> row);
     }
 
     private record WorkloadQuery(String sql, double weight) {}

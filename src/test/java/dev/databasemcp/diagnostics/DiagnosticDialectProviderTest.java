@@ -87,21 +87,6 @@ class DiagnosticDialectProviderTest {
 
     private record StubDiagnosticDialect(DatabaseType databaseType) implements DiagnosticDialect {
         @Override
-        public java.util.Set<String> supportedTopQuerySortBy() {
-            return java.util.Set.of();
-        }
-
-        @Override
-        public java.util.Set<String> supportedHealthTypes() {
-            return java.util.Set.of();
-        }
-
-        @Override
-        public boolean supportsHypotheticalIndexes() {
-            return false;
-        }
-
-        @Override
         public String getTopQueries(String sortBy, int limit) {
             return "";
         }

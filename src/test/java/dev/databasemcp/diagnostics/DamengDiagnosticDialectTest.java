@@ -15,13 +15,10 @@ import org.junit.jupiter.api.Test;
 class DamengDiagnosticDialectTest {
 
     @Test
-    void 暴露达梦诊断能力() {
+    void databaseTypeReturnsDameng() {
         DamengDiagnosticDialect dialect = new DamengDiagnosticDialect(new RecordingSqlClient());
 
         assertThat(dialect.databaseType()).isEqualTo(DatabaseType.DAMENG);
-        assertThat(dialect.supportedTopQuerySortBy()).contains("mean_time", "total_time", "executions");
-        assertThat(dialect.supportedHealthTypes()).contains("index", "connection", "wait", "storage", "sequence", "buffer", "constraint", "all");
-        assertThat(dialect.supportsHypotheticalIndexes()).isFalse();
     }
 
     @Test

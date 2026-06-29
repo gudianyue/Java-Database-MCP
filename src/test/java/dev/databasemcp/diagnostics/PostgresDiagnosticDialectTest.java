@@ -25,12 +25,6 @@ class PostgresDiagnosticDialectTest {
     }
 
     @Test
-    void supportsHypotheticalIndexes() {
-        PostgresDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-        assertThat(dialect.supportsHypotheticalIndexes()).isTrue();
-    }
-
-    @Test
     void getTopQueriesUsesPg13Columns() {
         RecordingSqlClient sqlClient = new RecordingSqlClient();
         PostgresDiagnosticDialect dialect = createDialect(sqlClient, true, 16);

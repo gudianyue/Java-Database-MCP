@@ -32,21 +32,6 @@ public class DamengDiagnosticDialect implements DiagnosticDialect {
     }
 
     @Override
-    public Set<String> supportedTopQuerySortBy() {
-        return TOP_QUERY_SORT_BY;
-    }
-
-    @Override
-    public Set<String> supportedHealthTypes() {
-        return HEALTH_TYPES;
-    }
-
-    @Override
-    public boolean supportsHypotheticalIndexes() {
-        return false;
-    }
-
-    @Override
     public String getTopQueries(String sortBy, int limit) {
         String effectiveSortBy = normalizeTopQuerySort(sortBy);
         int effectiveLimit = limit <= 0 ? 10 : limit;

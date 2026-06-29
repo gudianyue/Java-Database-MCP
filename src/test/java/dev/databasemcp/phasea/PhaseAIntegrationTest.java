@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.dialect.PostgresDatabaseDialect;
-import dev.databasemcp.schema.SchemaIntrospectionService;
 import dev.databasemcp.sql.JdbcSqlClient;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.RestrictedSqlGuard;
@@ -49,20 +48,21 @@ class PhaseAIntegrationTest {
     @Test
     void foundationalToolsWorkAgainstPostgres() {
         try (JdbcSqlClient sqlClient = new JdbcSqlClient(properties(SqlAccessMode.UNRESTRICTED), new RestrictedSqlGuard())) {
-            SchemaIntrospectionService schemaService = new SchemaIntrospectionService(
-                new DatabaseDialectProvider(properties(SqlAccessMode.UNRESTRICTED), List.of(new PostgresDatabaseDialect(sqlClient)))
-            );
+            var dialect = new DatabaseDialectProvider(
+                properties(SqlAccessMode.UNRESTRICTED),
+                List.of(new PostgresDatabaseDialect(sqlClient))
+            ).current();
 
-            assertThat(schemaService.listSchemas().rows())
+            assertThat(dialect.listSchemas().rows())
                 .anySatisfy(row -> assertThat(row).containsEntry("schema_name", "app"));
-            assertThat(schemaService.listObjects("app", "table").rows())
+            assertThat(dialect.listObjects("app", "table").rows())
                 .anySatisfy(row -> assertThat(row).containsEntry("table_name", "users"));
-            assertThat(schemaService.listObjects("app", "view").rows())
+            assertThat(dialect.listObjects("app", "view").rows())
                 .anySatisfy(row -> assertThat(row).containsEntry("table_name", "user_names"));
-            assertThat(schemaService.listObjects("app", "sequence").rows())
+            assertThat(dialect.listObjects("app", "sequence").rows())
                 .anySatisfy(row -> assertThat(row).containsEntry("sequence_name", "user_seq"));
 
-            QueryResult details = schemaService.getObjectDetails("app", "users", "table");
+            QueryResult details = dialect.getObjectDetails("app", "users", "table");
             assertThat(details.rows()).hasSize(1);
             assertThat(details.rows().getFirst()).containsEntry("schema", "app").containsEntry("name", "users");
 

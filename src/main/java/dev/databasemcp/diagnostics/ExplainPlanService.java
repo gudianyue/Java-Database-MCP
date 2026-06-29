@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -133,16 +134,14 @@ public class ExplainPlanService {
         }
         String renderedColumns = columnList.stream()
             .map(column -> quoteIdentifier(String.valueOf(column)))
-            .reduce((left, right) -> left + ", " + right)
-            .orElseThrow();
+            .collect(Collectors.joining(", "));
         return "CREATE INDEX ON " + quoteQualifiedIdentifier(String.valueOf(table)) + " USING " + method + " (" + renderedColumns + ")";
     }
 
     private static String quoteQualifiedIdentifier(String value) {
         return java.util.Arrays.stream(value.split("\\."))
             .map(ExplainPlanService::quoteIdentifier)
-            .reduce((left, right) -> left + "." + right)
-            .orElseThrow();
+            .collect(Collectors.joining("."));
     }
 
     private static String quoteIdentifier(String value) {
