@@ -14,6 +14,8 @@ class DatabaseTypeTest {
         assertThat(DatabaseType.from("dameng")).isEqualTo(DatabaseType.DAMENG);
         assertThat(DatabaseType.from("POSTGRESQL")).isEqualTo(DatabaseType.POSTGRESQL);
         assertThat(DatabaseType.from("DAMENG")).isEqualTo(DatabaseType.DAMENG);
+        assertThat(DatabaseType.from("doris")).isEqualTo(DatabaseType.DORIS);
+        assertThat(DatabaseType.from("DORIS")).isEqualTo(DatabaseType.DORIS);
     }
 
     @Test

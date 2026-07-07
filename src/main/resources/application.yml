@@ -28,3 +28,7 @@ database-mcp:
   database-name: ${DATABASE_NAME:}
   database-username: ${DATABASE_USERNAME:}
   database-password: ${DATABASE_PASSWORD:}
+
+# Doris 方言：通过 spring.profiles.active=doris 激活 application-doris.yml，
+# 或在启动时通过环境变量 DATABASE_TYPE=doris + DATABASE_URI=jdbc:mysql://host:9030/db 直接覆盖。
+# 完整示例与 5 项 Doris MySQL 兼容参数见 application-doris.yml。

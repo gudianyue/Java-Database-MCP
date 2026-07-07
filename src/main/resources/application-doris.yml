@@ -1,0 +1,37 @@
+# Apache Doris 方言 profile
+# 用法：mvn spring-boot:run -Dspring-boot.run.profiles=doris
+#       或 java -jar app.jar --spring.profiles.active=doris
+#       或在容器/进程环境里 export SPRING_PROFILES_ACTIVE=doris
+#
+# 两种连接方式可二选一：
+#   1) 完整 URL：仅设置 DATABASE_URI（下方默认值已给出，运行时用环境变量覆盖）
+#   2) 拆分参数：设置 DATABASE_HOST / DATABASE_PORT / DATABASE_NAME / DATABASE_USERNAME / DATABASE_PASSWORD
+# 优先使用 DATABASE_URI，缺失时 DatabaseMcpProperties 会按 database-type 拼接。
+
+database-mcp:
+  database-type: doris
+  database-port: 9030
+  # 方式 1：完整 URL（推荐，便于在同一实例上切换 database）
+  database-uri: jdbc:mysql://localhost:9030/example_db?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&tinyInt1isBit=false&allowPublicKeyRetrieval=true
+  # 方式 2：拆分参数（取消下方注释并填入实际值即可切换）
+  # database-host: localhost
+  # database-port: 9030
+  # database-name: example_db
+  # database-username: root
+  # database-password: your_password
+
+# ---------------------------------------------------------------------------
+# Doris MySQL 兼容参数（5 项，缺一不可）
+#   tinyInt1isBit=false          避免 TINYINT(1) 被当 BIT 处理
+#   zeroDateTimeBehavior=convertToNull  0000-00-00 映射为 NULL 而非抛错
+#   characterEncoding=UTF-8      元数据查询使用 UTF-8 解码
+#   useUnicode=true              配合 characterEncoding，启用 Unicode 传输
+#   allowPublicKeyRetrieval=true 本地开发可启用；生产请走 SSL 替代并设为 false
+# ---------------------------------------------------------------------------
+# 警告：allowPublicKeyRetrieval=true 会让 MySQL 客户端在不安全通道上请求公钥，
+# 存在中间人风险；仅当连接到本地受信 Doris FE 时使用。生产建议改为 useSSL=true。
+
+logging:
+  level:
+    dev.databasemcp.dialect.DorisDatabaseDialect: INFO
+    dev.databasemcp.diagnostics.DorisDiagnosticDialect: INFO

@@ -116,6 +116,79 @@
 - 达梦支持不以 DBA 或管理员权限为前提；低权限用户可能看到部分诊断项退化。
 - 真实达梦实例验证需要用户提供本地实例连接信息，验证时应覆盖所有 MCP 工具，并记录不可访问系统视图对应的退化行为。
 
+## Apache Doris 数据库支持
+
+使用 `DATABASE_TYPE=doris` 选择 Apache Doris，或通过 `spring.profiles.active=doris` 激活 `application-doris.yml` 完整 profile。Doris 复用 MySQL 客户端协议（默认端口 `9030`，JDBC 前缀 `jdbc:mysql://`，依赖 `mysql-connector-j`），因此不引入新的 JDBC 驱动；它与 `MySqlDatabaseDialect` **不**互通：方言层独立实现，避免 `information_schema` 与 `EXPLAIN` 输出差异被 MySQL 假设吞掉。
+
+### 基础工具
+
+- `execute_sql` 使用项目统一的 JDBC SQL 客户端和 `SqlAccessMode` 访问模式控制，方言层不绕开。
+- `list_schemas` 读取 `information_schema.SCHEMATA`，并对系统库（`mysql`、`information_schema`、`performance_schema`、`sys`、`__internal_schema`）打 `System Schema` 标记。
+- `list_objects` 支持 `table` / `view`：
+  - `table` 读取 `information_schema.TABLES` 且 `TABLE_TYPE='BASE TABLE'`；Doris 的物化视图（`MATERIALIZED VIEW`）在 `TABLE_TYPE` 中也归类为 `BASE TABLE`，会随 `table` 列表返回。
+  - `view` 读取 `information_schema.TABLES` 且 `TABLE_TYPE='VIEW'`。
+  - `sequence` / `extension` 抛 `UnsupportedOperationException`，消息遵循 `<DB> 不支持 <X> 风格的 <Y>。` 模板。
+- `get_object_details` 对表和视图通过 `JSON_ARRAYAGG(JSON_OBJECT(...))` 聚合 `information_schema.COLUMNS`、`KEY_COLUMN_USAGE`、`STATISTICS`；低版本（< 2.0）不支持 `JSON_ARRAYAGG` 时，会进入 `degraded` 路径，返回带有 `"当前 Doris 版本或权限无法获取索引统计"` 说明的 `indexes` 字段。
+- `explain_query` 使用 Doris 原生 `EXPLAIN <sql>`（**不**附加 `FORMAT=JSON`），由 `ReadOnlyQueryValidator` 先行拦截非 `SELECT` 与多语句。
+- `explain_query` 的 `analyze=true` 与 `hypothetical_indexes` 通过现有 `ExplainPlanService` 路由抛不支持说明（与 MySQL / 达梦一致）。
+
+### 诊断工具
+
+- `get_top_queries` 从 `__internal_schema.audit_log` 聚合 SQL 摘要（`COALESCE(stmt, digest)`），支持 `mean_time` / `total_time` / `executions` 排序；`__internal_schema.audit_log` 在审计插件未启用时该工具返回退化说明。
+- `analyze_db_health` 使用**独立的 Doris 原语命名空间**，参数为 `doris_audit_log` / `doris_compaction` / `doris_tablet_health` / `all`（逗号组合），逐项独立执行、失败隔离：
+  - `doris_audit_log`：基于 `__internal_schema.audit_log`，输出 `user` / `query` / `query_count` / `last_active` 详细表（10–20 行）。
+  - `doris_compaction`：读取 `information_schema.BACKENDS`，输出 `backend_id` / `host` / `alive` / `tablet_num` / `last_heartbeat` 详细表。
+  - `doris_tablet_health`：读取 `information_schema.tablets`，输出 `tablet_id` / `backend_id` / `version_count` / `row_count` / `last_check_time` 详细表。
+  - `all`：合并上述三段输出。
+- `analyze_db_health` 收到 PG / MySQL / 达梦方言遗留的 10 个健康检查名（`vacuum` / `fragmentation` / `sequence` / `auto_increment` / `wait` / `storage` / `replication` / `index` / `connection` / `buffer` / `constraint`）一律抛 `UnsupportedOperationException("Doris 不支持 <X> 风格的 <Y>。")`；收到**未识别**名称则抛 `IllegalArgumentException`（与 MySQL / 达梦一致）。
+- `analyze_workload_indexes` 从 `__internal_schema.audit_log` 取高成本查询，结合 `information_schema.COLUMNS` 评估列基数，输出只读索引建议；`method='llm'` 返回占位说明。
+- `analyze_query_indexes` 接受最多 10 条 `SELECT`，对每条执行 `EXPLAIN <sql>`（不附加 `FORMAT=JSON`）并输出只读建议；`method='llm'` 返回占位说明。
+
+### 限制
+
+1. `EXPLAIN` 输出为 Doris 文本计划，**不**使用 `EXPLAIN FORMAT=JSON`；下游若需要 JSON 结构，由调用方在客户端解析。
+2. 物化视图在 `list_objects(table)` 列表中以 `BASE TABLE` 形式出现，未单独区分 `MATERIALIZED VIEW`。
+3. 不支持 `sequence` / `extension` 对象类型；调用方会收到 `UnsupportedOperationException`。
+4. `analyze_db_health` 不支持 PG / MySQL / 达梦的 10 个遗留健康检查名（`vacuum` / `fragmentation` / `sequence` / `auto_increment` / `wait` / `storage` / `replication` / `index` / `connection` / `buffer` / `constraint`），统一改用 `doris_*` 原语。
+5. `audit_log` 相关诊断依赖审计插件（`enable_audit_plugin=true`）和 `__internal_schema.audit_log` 表存在；未启用时该项返回退化说明，其它检查项继续执行。
+6. `SHOW` 语句的封装层不通过方言层实现：Doris 部分 `SHOW` 输出与 MySQL 不完全一致，调用方直接使用 `execute_sql` 即可。
+7. `get_object_details` 在 Doris < 2.0 缺少 `JSON_ARRAYAGG` 支持时会走退化路径；建议生产环境使用 Doris ≥ 2.0。
+8. `list_objects(table)` 会同时返回普通表与物化视图（`BASE TABLE`），调用方需结合 `information_schema.TABLES` 自行甄别（可通过 `TABLE_COMMENT` 字段辅助判断）。
+
+### 连接配置
+
+```yaml
+# application-doris.yml（已随项目提供，可通过 -Dspring.profiles.active=doris 激活）
+database-mcp:
+  database-type: doris
+  database-port: 9030
+  # 方式 1：完整 URL（推荐，单实例切换 database）
+  database-uri: jdbc:mysql://localhost:9030/example_db?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&tinyInt1isBit=false&allowPublicKeyRetrieval=true
+  # 方式 2：拆分参数
+  # database-host: localhost
+  # database-port: 9030
+  # database-name: example_db
+  # database-username: root
+  # database-password: your_password
+```
+
+环境变量形式（与 `application.yml` 兼容，无需 profile）：
+
+```bash
+export DATABASE_TYPE=doris
+export DATABASE_URI='jdbc:mysql://localhost:9030/example_db?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&tinyInt1isBit=false&allowPublicKeyRetrieval=true'
+```
+
+5 项 Doris MySQL 兼容参数（缺一不可）：
+
+| 参数 | 取值 | 作用 |
+|---|---|---|
+| `tinyInt1isBit` | `false` | 避免 TINYINT(1) 被当 BIT 处理 |
+| `zeroDateTimeBehavior` | `convertToNull` | `0000-00-00` 映射为 NULL 而非抛错 |
+| `characterEncoding` | `UTF-8` | 元数据查询使用 UTF-8 解码 |
+| `useUnicode` | `true` | 配合 `characterEncoding`，启用 Unicode 传输 |
+| `allowPublicKeyRetrieval` | `true` | 本地受信场景可启用；**生产请改 `useSSL=true` 并设为 `false`**，避免中间人风险 |
+
 ## 兼容性规则
 
 只有在保留工具意图、已记录在本文档、并且有测试覆盖时，细微差异才可以接受。新增数据库方言时，应优先提供基础结构查看、受控 SQL 执行和基础执行计划，再逐步补充该数据库原生支持的诊断能力。诊断逻辑通过 `DiagnosticDialect` 接口解耦，Service 层仅负责路由委托。

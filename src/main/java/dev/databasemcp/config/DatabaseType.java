@@ -5,6 +5,7 @@ import java.util.Arrays;
 public enum DatabaseType {
     POSTGRESQL("postgresql", 5432, "jdbc:postgresql://"),
     MYSQL("mysql", 3306, "jdbc:mysql://"),
+    DORIS("doris", 9030, "jdbc:mysql://"),
     DAMENG("dameng", 5236, "jdbc:dm://");
 
     private final String value;

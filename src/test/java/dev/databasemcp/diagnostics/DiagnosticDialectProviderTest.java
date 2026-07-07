@@ -47,6 +47,16 @@ class DiagnosticDialectProviderTest {
     }
 
     @Test
+    void selectsDorisDialectWhenConfigured() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.DORIS);
+        DiagnosticDialect dorisDialect = new StubDiagnosticDialect(DatabaseType.DORIS);
+        DiagnosticDialectProvider provider = new DiagnosticDialectProvider(new ArrayList<>(List.of(dorisDialect)), properties);
+
+        assertThat(provider.current().databaseType()).isEqualTo(DatabaseType.DORIS);
+    }
+
+    @Test
     void throwsWhenNoDialectMatches() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.MYSQL);

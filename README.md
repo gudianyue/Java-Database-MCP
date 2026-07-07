@@ -1,6 +1,6 @@
 # Database MCP Java
 
-Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL、MySQL 和达梦数据库的基础数据库工具，并提供按数据库方言实现的慢查询统计、健康检查和索引建议。
+Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring Boot 和 Spring AI MCP Server 构建。当前支持 PostgreSQL、MySQL、达梦数据库和 Apache Doris 的基础数据库工具，并提供按数据库方言实现的慢查询统计、健康检查和索引建议。
 
 ## 支持范围
 
@@ -30,6 +30,15 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 - 健康检查：`analyze_db_health`，支持 `index`、`connection`、`wait`、`storage`、`sequence`、`buffer`、`constraint`、`all`
 - 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，只做只读分析和建议输出，不自动创建索引
 - 不支持项：`extension` 对象、`analyze=true`、`hypothetical_indexes`、`method='llm'` 暂不支持
+
+### Apache Doris
+
+- 基础工具：`execute_sql`、`list_schemas`、`list_objects`、`get_object_details`，复用 `mysql-connector-j`（不引入新的 JDBC 驱动）
+- 执行计划：`explain_query`，使用 Doris 原生 `EXPLAIN`（**不**附加 `FORMAT=JSON`）
+- 慢查询统计：`get_top_queries`，从 `__internal_schema.audit_log` 聚合 SQL 摘要，支持 `mean_time`、`total_time`、`executions`，依赖审计插件
+- 健康检查：`analyze_db_health`，使用独立的 `doris_*` 原语命名空间（`doris_audit_log` / `doris_compaction` / `doris_tablet_health` / `all`），PG/MySQL/达梦遗留的 10 个健康检查名会抛 `UnsupportedOperationException`
+- 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，从 `__internal_schema.audit_log` 和 `EXPLAIN` 输出只读建议
+- 不支持项：`sequence` / `extension` 对象、`analyze=true`、`hypothetical_indexes`、`method='llm'` 暂不支持
 
 ## MCP 传输
 
@@ -125,6 +134,40 @@ DATABASE_NAME=app
 DATABASE_USERNAME=root
 DATABASE_PASSWORD=secret
 ```
+
+### Apache Doris 示例
+
+使用规范的数据库类型值 `doris`。Doris 复用 MySQL 客户端协议，默认端口 `9030`，JDBC 前缀 `jdbc:mysql://`，复用项目已有的 `mysql-connector-j`。可通过 `spring.profiles.active=doris` 激活 `application-doris.yml`，也可直接通过环境变量覆盖。
+
+完整 JDBC URL（推荐，含 5 项 Doris MySQL 兼容参数）：
+
+```bash
+DATABASE_TYPE=doris
+DATABASE_URI='jdbc:mysql://localhost:9030/example_db?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull&tinyInt1isBit=false&allowPublicKeyRetrieval=true'
+```
+
+拆分配置：
+
+```bash
+DATABASE_TYPE=doris
+DATABASE_HOST=localhost
+DATABASE_PORT=9030
+DATABASE_NAME=example_db
+DATABASE_USERNAME=root
+DATABASE_PASSWORD=<password>
+```
+
+5 项 Doris MySQL 兼容参数（缺一不可）：
+
+| 参数 | 取值 | 作用 |
+|---|---|---|
+| `tinyInt1isBit` | `false` | 避免 TINYINT(1) 被当 BIT 处理 |
+| `zeroDateTimeBehavior` | `convertToNull` | `0000-00-00` 映射为 NULL 而非抛错 |
+| `characterEncoding` | `UTF-8` | 元数据查询使用 UTF-8 解码 |
+| `useUnicode` | `true` | 配合 `characterEncoding` 启用 Unicode 传输 |
+| `allowPublicKeyRetrieval` | `true` | 本地受信场景可启用；**生产请改 `useSSL=true` 并设为 `false`**，避免中间人风险 |
+
+诊断工具依赖审计插件（`enable_audit_plugin=true`）和 `__internal_schema.audit_log` 表存在；未启用时对应项返回退化说明，其它检查项继续执行。`get_object_details` 在 Doris < 2.0 缺少 `JSON_ARRAYAGG` 支持时会走退化路径，建议生产环境使用 Doris ≥ 2.0。
 
 ### 达梦数据库示例
 
@@ -231,7 +274,7 @@ mvn -DskipTests package
 
 ## 兼容性说明
 
-不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL、MySQL 和达梦数据库分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
+不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL、MySQL、达梦数据库和 Apache Doris 分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 第三方来源
 

@@ -42,6 +42,22 @@ class DatabaseDialectProviderTest {
     }
 
     @Test
+    void currentSelectsDorisDialectWhenPropertiesUseDoris() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.setDatabaseType(DatabaseType.DORIS);
+        DatabaseDialect dorisDialect = new StubDatabaseDialect(DatabaseType.DORIS);
+        DatabaseDialect mysqlDialect = new StubDatabaseDialect(DatabaseType.MYSQL);
+        DatabaseDialect damengDialect = new StubDatabaseDialect(DatabaseType.DAMENG);
+
+        DatabaseDialectProvider provider = new DatabaseDialectProvider(
+            properties,
+            List.of(mysqlDialect, dorisDialect, damengDialect)
+        );
+
+        assertThat(provider.current()).isSameAs(dorisDialect);
+    }
+
+    @Test
     void currentThrowsWhenNoDialectMatchesProperties() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.MYSQL);
