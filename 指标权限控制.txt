@@ -1,0 +1,54 @@
+-- 指标权限控制
+ with wt_param as (
+select '[${p_user_id}]'::VARCHAR             AS p_user_id
+
+ )
+, wt_auth AS (
+    WITH RECURSIVE all_data(org_code, parent_code, name_) AS (
+        SELECT t_po.org_code
+        , t_po.parent_code
+        , t_po.name_
+        FROM ibps.ibps_party_org t_po
+        LEFT JOIN ibps.ibps_party_user t_pu
+        ON t_pu.main_org_ = t_po.id_
+        WHERE t_pu.id_ = (SELECT p_user_id FROM wt_param) AND
+        t_po.org_classify = 'dept'
+
+        UNION ALL
+        SELECT t_po.org_code
+        , t_po.parent_code
+        , t_po.name_
+        FROM ibps.ibps_party_org t_po
+        , all_data parent
+        WHERE t_po.parent_code = parent.org_code
+    )
+    , wt_uo as (
+    SELECT org_code, parent_code, name_ FROM all_data d
+    )
+    SELECT t_ro.quota_id
+    , t_ro.quota_scenes
+    FROM gkschema.gk_qta_res_obj t_ro
+    WHERE t_ro.res_obj = '部门' AND t_ro.res_obj_id IN (SELECT org_code FROM wt_uo)
+    UNION
+    SELECT t_ro.quota_id
+    , t_ro.quota_scenes
+    FROM gkschema.gk_qta_res_obj t_ro
+    WHERE t_ro.res_obj = '角色' AND
+    t_ro.res_obj_id IN (SELECT t2.role_id_
+        FROM ibps.ibps_party_user_role t2
+        WHERE t2.user_id_ = (SELECT p_user_id FROM wt_param)
+        UNION
+        SELECT gr.role_id_
+        FROM ibps.ibps_party_group_role gr
+        INNER JOIN ibps.ibps_party_user_group ug
+        ON ug.group_id_ = gr.id_
+        WHERE ug.user_id_ = (SELECT p_user_id FROM wt_param)
+    )
+    UNION
+    SELECT t_ro.quota_id
+    , t_ro.quota_scenes
+    FROM gkschema.gk_qta_res_obj t_ro
+    WHERE t_ro.res_obj = '用户' AND t_ro.res_obj_id IN (SELECT p_user_id FROM wt_param)
+)
+
+select * from wt_auth

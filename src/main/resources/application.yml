@@ -29,6 +29,31 @@ database-mcp:
   database-username: ${DATABASE_USERNAME:}
   database-password: ${DATABASE_PASSWORD:}
 
+  # 指标 SQL 权限控制（默认关闭）。
+  # 完整说明见 docs/permission-control.md；开启后 MetricPermissionConfigurationValidator
+  # 会在启动时校验以下 5 项必填（任一为空即拒绝启动）：
+  #   metric.protected-tables / metric.metric-columns / metric.scene-columns
+  #   metric.provider.authorization-query（必须含且仅含一个占位符）
+  #   恰好 1 个 MetricPermissionProvider Bean（默认 ConfiguredSqlMetricPermissionProvider）
+  # 如需对接外部 IAM，把 authorization-query 留空并自实现 MetricPermissionProvider 即可。
+  # permission:
+  #   enabled: true
+  #   metric:
+  #     enabled: true
+  #     protected-tables:                # 受保护白名单，未列入的表不进入鉴权
+  #       - <schema>.<table>
+  #     metric-columns:                  # 受保护表上代表"指标"的列名
+  #       - quota_id
+  #     scene-columns:                   # 受保护表上代表"场景"的列名
+  #       - quota_scene
+  #     provider:
+  #       authorization-query: |         # 占位符仅支持 ${user_id} / ${p_user_id} / [${user_id}] 及其引号包裹形式
+  #         SELECT quota_id, quota_scenes
+  #         FROM <schema>.user_metric_auth
+  #         WHERE user_id = '${user_id}'
+  #       scene-delimiters: [",", "，", ";", "|"]   # quota_scenes 拆分符；不配默认同上
+  #       timeout-seconds: 10            # 超时→permission_provider_timeout
+
 # Doris 方言：通过 spring.profiles.active=doris 激活 application-doris.yml，
 # 或在启动时通过环境变量 DATABASE_TYPE=doris + DATABASE_URI=jdbc:mysql://host:9030/db 直接覆盖。
 # 完整示例与 5 项 Doris MySQL 兼容参数见 application-doris.yml。

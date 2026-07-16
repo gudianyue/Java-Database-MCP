@@ -66,4 +66,20 @@ class JdbcSqlClientLoggingTest {
         assertThat(output).contains("SQL 执行完成：status=failure");
         assertThat(output).contains("error=连接失败 password=****");
     }
+
+    @Test
+    void appliesExplicitTimeoutInUnrestrictedMode() throws Exception {
+        String sql = "SELECT quota_id FROM auth WHERE user_id = ?";
+        DataSource dataSource = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(sql)).thenReturn(statement);
+        when(statement.execute()).thenReturn(false);
+        JdbcSqlClient client = new JdbcSqlClient(new DatabaseMcpProperties(), new RestrictedSqlGuard(), dataSource);
+
+        client.query(sql, List.of("user-1"), 7);
+
+        verify(statement).setQueryTimeout(7);
+    }
 }

@@ -1,7 +1,9 @@
 package dev.databasemcp.config;
 
 import dev.databasemcp.sql.SqlAccessMode;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "database-mcp")
@@ -17,6 +19,7 @@ public class DatabaseMcpProperties {
     private SqlAccessMode accessMode = SqlAccessMode.UNRESTRICTED;
     private int restrictedTimeoutSeconds = 30;
     private int maximumPoolSize = 5;
+    private PermissionProperties permission = new PermissionProperties();
 
     public String getDatabaseUri() {
         if (databaseUri == null || databaseUri.isBlank()) {
@@ -118,7 +121,119 @@ public class DatabaseMcpProperties {
         this.maximumPoolSize = maximumPoolSize;
     }
 
+    public PermissionProperties getPermission() {
+        return permission;
+    }
+
+    public void setPermission(PermissionProperties permission) {
+        this.permission = permission == null ? new PermissionProperties() : permission;
+    }
+
     private static boolean hasText(String value) {
         return Optional.ofNullable(value).map(String::isBlank).map(blank -> !blank).orElse(false);
+    }
+
+    public static class PermissionProperties {
+
+        private boolean enabled;
+        private MetricProperties metric = new MetricProperties();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public MetricProperties getMetric() {
+            return metric;
+        }
+
+        public void setMetric(MetricProperties metric) {
+            this.metric = metric == null ? new MetricProperties() : metric;
+        }
+    }
+
+    public static class MetricProperties {
+
+        private boolean enabled;
+        private Set<String> protectedTables = Set.of();
+        private Set<String> metricColumns = Set.of();
+        private Set<String> sceneColumns = Set.of();
+        private ProviderProperties provider = new ProviderProperties();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public Set<String> getProtectedTables() {
+            return protectedTables;
+        }
+
+        public void setProtectedTables(Set<String> protectedTables) {
+            this.protectedTables = protectedTables == null ? Set.of() : protectedTables;
+        }
+
+        public Set<String> getMetricColumns() {
+            return metricColumns;
+        }
+
+        public void setMetricColumns(Set<String> metricColumns) {
+            this.metricColumns = metricColumns == null ? Set.of() : metricColumns;
+        }
+
+        public Set<String> getSceneColumns() {
+            return sceneColumns;
+        }
+
+        public void setSceneColumns(Set<String> sceneColumns) {
+            this.sceneColumns = sceneColumns == null ? Set.of() : sceneColumns;
+        }
+
+        public ProviderProperties getProvider() {
+            return provider;
+        }
+
+        public void setProvider(ProviderProperties provider) {
+            this.provider = provider == null ? new ProviderProperties() : provider;
+        }
+    }
+
+    public static class ProviderProperties {
+
+        private String authorizationQuery;
+        private List<String> sceneDelimiters = List.of(",", "，", ";", "|");
+        private int timeoutSeconds = 10;
+
+        public String getAuthorizationQuery() {
+            return authorizationQuery;
+        }
+
+        public void setAuthorizationQuery(String authorizationQuery) {
+            this.authorizationQuery = authorizationQuery;
+        }
+
+        public List<String> getSceneDelimiters() {
+            return sceneDelimiters;
+        }
+
+        public void setSceneDelimiters(List<String> sceneDelimiters) {
+            this.sceneDelimiters = sceneDelimiters == null || sceneDelimiters.isEmpty()
+                ? List.of(",", "，", ";", "|")
+                : sceneDelimiters;
+        }
+
+        public int getTimeoutSeconds() {
+            return timeoutSeconds;
+        }
+
+        public void setTimeoutSeconds(int timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
+        }
     }
 }

@@ -47,6 +47,18 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
 
     @Override
     public QueryResult query(String sql, List<?> params) {
+        return query(sql, params, null);
+    }
+
+    @Override
+    public QueryResult query(String sql, List<?> params, int timeoutSeconds) {
+        if (timeoutSeconds <= 0) {
+            throw new IllegalArgumentException("timeoutSeconds must be greater than zero");
+        }
+        return query(sql, params, Integer.valueOf(timeoutSeconds));
+    }
+
+    private QueryResult query(String sql, List<?> params, Integer timeoutSeconds) {
         if (properties.getAccessMode() == SqlAccessMode.RESTRICTED) {
             restrictedSqlGuard.validate(sql);
         }
@@ -58,9 +70,9 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
             connection.setReadOnly(readOnly);
             QueryResult result;
             if (effectiveParams.isEmpty()) {
-                result = executeStatement(connection, sql, readOnly);
+                result = executeStatement(connection, sql, readOnly, timeoutSeconds);
             } else {
-                result = executePreparedStatement(connection, sql, effectiveParams, readOnly);
+                result = executePreparedStatement(connection, sql, effectiveParams, readOnly, timeoutSeconds);
             }
             LOGGER.info("SQL 执行完成：status=success, elapsedMs={}, rowCount={}", elapsedMillis(startedAt), result.rows().size());
             return result;
@@ -73,9 +85,9 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
         }
     }
 
-    private QueryResult executeStatement(Connection connection, String sql, boolean readOnly) throws SQLException {
+    private QueryResult executeStatement(Connection connection, String sql, boolean readOnly, Integer timeoutSeconds) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            configureStatement(statement, readOnly);
+            configureStatement(statement, readOnly, timeoutSeconds);
             boolean hasResultSet = statement.execute(sql);
             if (!hasResultSet) {
                 return QueryResult.empty();
@@ -86,9 +98,15 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
         }
     }
 
-    private QueryResult executePreparedStatement(Connection connection, String sql, List<?> params, boolean readOnly) throws SQLException {
+    private QueryResult executePreparedStatement(
+        Connection connection,
+        String sql,
+        List<?> params,
+        boolean readOnly,
+        Integer timeoutSeconds
+    ) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            configureStatement(statement, readOnly);
+            configureStatement(statement, readOnly, timeoutSeconds);
             for (int i = 0; i < params.size(); i++) {
                 statement.setObject(i + 1, params.get(i));
             }
@@ -102,8 +120,10 @@ public class JdbcSqlClient implements SqlClient, AutoCloseable {
         }
     }
 
-    private void configureStatement(Statement statement, boolean readOnly) throws SQLException {
-        if (readOnly) {
+    private void configureStatement(Statement statement, boolean readOnly, Integer timeoutSeconds) throws SQLException {
+        if (timeoutSeconds != null) {
+            statement.setQueryTimeout(timeoutSeconds);
+        } else if (readOnly) {
             statement.setQueryTimeout(properties.getRestrictedTimeoutSeconds());
         }
     }

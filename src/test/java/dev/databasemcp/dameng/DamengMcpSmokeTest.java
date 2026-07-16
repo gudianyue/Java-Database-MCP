@@ -10,6 +10,9 @@ import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.diagnostics.PostgresExtensionService;
 import dev.databasemcp.dialect.DamengDatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
+import dev.databasemcp.permission.ConservativeMetricSqlInspector;
+import dev.databasemcp.permission.MetricPermissionEnforcer;
+import dev.databasemcp.permission.PermissionScope;
 import dev.databasemcp.mcp.DatabaseToolFacade;
 import dev.databasemcp.sql.JdbcSqlClient;
 import dev.databasemcp.sql.QueryResult;
@@ -92,7 +95,11 @@ class DamengMcpSmokeTest {
             databaseDialectProvider,
             sqlClient,
             new ExplainPlanService(sqlClient, new PostgresExtensionService(sqlClient), databaseDialectProvider),
-            diagnosticDialectProvider
+            diagnosticDialectProvider,
+            new MetricPermissionEnforcer(
+                new ConservativeMetricSqlInspector(properties),
+                userId -> PermissionScope.empty()
+            )
         );
     }
 

@@ -3,6 +3,9 @@ package dev.databasemcp.mcp;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
+import dev.databasemcp.permission.MetricPermissionEnforcer;
+import dev.databasemcp.permission.PermissionContext;
+import dev.databasemcp.permission.PermissionUsage;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -19,17 +22,20 @@ public class DatabaseToolFacade {
     private final SqlClient sqlClient;
     private final ExplainPlanService explainPlanService;
     private final DiagnosticDialectProvider diagnosticDialectProvider;
+    private final MetricPermissionEnforcer permissionEnforcer;
 
     public DatabaseToolFacade(
         DatabaseDialectProvider databaseDialectProvider,
         SqlClient sqlClient,
         ExplainPlanService explainPlanService,
-        DiagnosticDialectProvider diagnosticDialectProvider
+        DiagnosticDialectProvider diagnosticDialectProvider,
+        MetricPermissionEnforcer permissionEnforcer
     ) {
         this.databaseDialectProvider = databaseDialectProvider;
         this.sqlClient = sqlClient;
         this.explainPlanService = explainPlanService;
         this.diagnosticDialectProvider = diagnosticDialectProvider;
+        this.permissionEnforcer = permissionEnforcer;
     }
 
     @McpTool(name = "list_schemas", description = "列出当前数据库连接可见的 schema")
@@ -66,22 +72,44 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "execute_sql", description = "按照当前访问模式执行 SQL")
     public String executeSql(@McpToolParam(description = "要执行的 SQL") String sql) {
+        return executeSql(sql, "none", null, List.of());
+    }
+
+    @McpTool(name = "execute_sql", description = "Execute SQL. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; server validates SQL evidence.")
+    public String executeSql(
+        @McpToolParam(description = "要执行的 SQL") String sql,
+        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
+        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
+        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+    ) {
         try {
+            permissionEnforcer.authorize(sql, PermissionContext.of(permissionDomain, userId, metricScopes), PermissionUsage.EXECUTE);
             return toText(sqlClient.query(sql));
         } catch (Exception e) {
             return error(e);
         }
     }
 
-    @McpTool(name = "explain_query", description = "查看 SQL 查询的执行计划")
     public String explainQuery(
         @McpToolParam(description = "要解释的 SQL 查询") String sql,
         @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
         @McpToolParam(description = "在支持的数据库上评估的假设索引；不需要时传空列表") List<Map<String, Object>> hypotheticalIndexes
     ) {
+        return explainQuery(sql, analyze, hypotheticalIndexes, "none", null, List.of());
+    }
+
+    @McpTool(name = "explain_query", description = "Explain SQL. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; server validates before EXPLAIN.")
+    public String explainQuery(
+        @McpToolParam(description = "要解释的 SQL 查询") String sql,
+        @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
+        @McpToolParam(description = "在支持的数据库上评估的假设索引；不需要时传空列表") List<Map<String, Object>> hypotheticalIndexes,
+        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
+        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
+        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+    ) {
         try {
+            permissionEnforcer.authorize(sql, PermissionContext.of(permissionDomain, userId, metricScopes), PermissionUsage.EXPLAIN);
             return explainPlanService.explain(sql, Boolean.TRUE.equals(analyze), hypotheticalIndexes);
         } catch (Exception e) {
             return error(e);
@@ -123,13 +151,30 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "analyze_query_indexes", description = "分析最多 10 条 SQL 查询并给出索引建议")
     public String analyzeQueryIndexes(
         @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
         @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method
     ) {
+        return analyzeQueryIndexes(queries, maxIndexSizeMb, method, "none", null, List.of());
+    }
+
+    @McpTool(name = "analyze_query_indexes", description = "Analyze SQL queries for indexes. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; every query is authorized first.")
+    public String analyzeQueryIndexes(
+        @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
+        @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
+        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method,
+        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
+        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
+        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+    ) {
         try {
+            PermissionContext context = PermissionContext.of(permissionDomain, userId, metricScopes);
+            if (queries != null) {
+                for (String query : queries) {
+                    permissionEnforcer.authorize(query, context, PermissionUsage.ANALYZE_INDEX);
+                }
+            }
             return diagnosticDialectProvider.current().analyzeQueryIndexes(queries, maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
         } catch (Exception e) {
             return error(e);

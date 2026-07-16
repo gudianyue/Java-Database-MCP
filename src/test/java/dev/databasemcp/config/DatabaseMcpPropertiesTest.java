@@ -2,6 +2,7 @@ package dev.databasemcp.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class DatabaseMcpPropertiesTest {
@@ -83,6 +84,37 @@ class DatabaseMcpPropertiesTest {
         properties.setDatabaseName("appdb");
 
         assertThat(properties.resolvedJdbcUrl()).isBlank();
+    }
+
+    @Test
+    void permissionConfigurationDefaultsToDisabledAndEmptyMetricSets() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+
+        assertThat(properties.getPermission().isEnabled()).isFalse();
+        assertThat(properties.getPermission().getMetric().isEnabled()).isFalse();
+        assertThat(properties.getPermission().getMetric().getProtectedTables()).isEmpty();
+        assertThat(properties.getPermission().getMetric().getMetricColumns()).isEmpty();
+        assertThat(properties.getPermission().getMetric().getSceneColumns()).isEmpty();
+        assertThat(properties.getPermission().getMetric().getProvider().getTimeoutSeconds()).isEqualTo(10);
+    }
+
+    @Test
+    void permissionMetricSettersKeepNullAndEmptyCollectionsEmpty() {
+        DatabaseMcpProperties.MetricProperties metric = new DatabaseMcpProperties.MetricProperties();
+
+        metric.setProtectedTables(null);
+        metric.setMetricColumns(null);
+        metric.setSceneColumns(null);
+
+        assertThat(metric.getProtectedTables()).isEmpty();
+        assertThat(metric.getMetricColumns()).isEmpty();
+        assertThat(metric.getSceneColumns()).isEmpty();
+
+        metric.setMetricColumns(Set.of());
+        metric.setSceneColumns(Set.of());
+
+        assertThat(metric.getMetricColumns()).isEmpty();
+        assertThat(metric.getSceneColumns()).isEmpty();
     }
 
     private static class TestDatabaseMcpProperties extends DatabaseMcpProperties {
