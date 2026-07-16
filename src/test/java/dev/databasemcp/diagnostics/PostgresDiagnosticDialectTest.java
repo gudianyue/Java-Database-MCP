@@ -132,15 +132,6 @@ class PostgresDiagnosticDialectTest {
         assertThat(result).contains("hypopg 扩展").contains("CREATE EXTENSION hypopg");
     }
 
-    @Test
-    void analyzeQueryIndexesDefersLlmMethod() {
-        PostgresDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-
-        String result = dialect.analyzeQueryIndexes(List.of("SELECT * FROM users"), 10000, "llm");
-
-        assertThat(result).contains("LLM 索引优化方法").contains("method='dta'");
-    }
-
     // ==================== 辅助类 ====================
 
     private static PostgresDiagnosticDialect createDialect(RecordingSqlClient sqlClient) {

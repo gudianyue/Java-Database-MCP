@@ -35,7 +35,8 @@
 - `analyze_db_health` 支持 `index`、`connection`、`vacuum`、`sequence`、`replication`、`buffer`、`constraint`、`all` 类型和逗号组合输入。
 - `analyze_db_health` 当前以 Java 服务内的只读 SQL 检查实现主要健康信号；索引膨胀检查先报告超过 100MB 的大索引。
 - `analyze_db_health` 的单项检查如果遇到权限或版本问题，会在该检查项中返回失败说明，其它已请求检查仍继续执行。
-- `analyze_workload_indexes` 和 `analyze_query_indexes` 保留 `max_index_size_mb` 与 `method` 参数；当前 Java 版本实现 `method='dta'`，`method='llm'` 保留入口并返回暂未接入说明。
+- `analyze_query_indexes` 保留 `max_index_size_mb` 与 `method` 参数，`method` 仅支持 `dta`，为空时默认使用 `dta`。
+- `analyze_workload_indexes` 保留 `max_index_size_mb` 与 `method` 参数；当前 Java 版本实现 `method='dta'`，`method='llm'` 仍返回暂未接入说明。
 - Java DTA 使用 PostgreSQL `EXPLAIN (FORMAT JSON)`、`pg_catalog`、`information_schema` 和 HypoPG 评估候选索引。
 - Java DTA 先推荐单列 `btree` 索引，过滤已有简单索引、长文本、JSON、`bytea` 列，并按 HypoPG 评估后的成本改善排序。
 
@@ -73,10 +74,10 @@
 
 - 数据源：`performance_schema.events_statements_summary_by_digest`（workload 模式）
 - EXPLAIN 解析：使用 `EXPLAIN FORMAT=JSON`，解析 `query_block` 中的 `access_type`、`table_name`、`attached_condition`
-- 索引建议方法：规则引擎评分（`method='dta'`）；MySQL 没有 HypoPG 等假设索引扩展
+- 索引建议方法：规则引擎评分（`method='dta'`）；`analyze_query_indexes` 仅支持 `dta`；MySQL 没有 HypoPG 等假设索引扩展
 - 规则评分逻辑：全表扫描查询权重乘以索引大小衰减因子，按评分排序输出建议
 - 不支持 `hypothetical_indexes`，MySQL 分支返回明确提示
-- `method='llm'` 保留入口，返回暂未接入说明
+- `analyze_workload_indexes` 的 `method='llm'` 仍返回暂未接入说明
 
 ### `explain_query`
 
@@ -106,8 +107,8 @@
 - `analyze_db_health` 支持 `index`、`connection`、`wait`、`storage`、`sequence`、`buffer`、`constraint`、`all`。
 - 健康检查尽量按单项独立执行；某个系统视图不可访问或权限不足时，该项返回退化说明，其它已请求项继续执行。
 - `analyze_workload_indexes` 从 `V$SQL_HISTORY` 读取工作负载 SQL，使用只读规则输出索引建议。
-- `analyze_query_indexes` 接受最多 10 条 `SELECT` 查询，对每条查询执行达梦 `EXPLAIN` 并输出只读索引建议。
-- `method='llm'` 保留入口，当前返回暂未接入说明。
+- `analyze_query_indexes` 接受最多 10 条 `SELECT` 查询，对每条查询执行达梦 `EXPLAIN` 并输出只读索引建议；`method` 仅支持 `dta`，为空时默认使用 `dta`。
+- `analyze_workload_indexes` 的 `method='llm'` 仍返回暂未接入说明。
 
 ### 限制
 
@@ -142,7 +143,7 @@
   - `all`：合并上述三段输出。
 - `analyze_db_health` 收到 PG / MySQL / 达梦方言遗留的 10 个健康检查名（`vacuum` / `fragmentation` / `sequence` / `auto_increment` / `wait` / `storage` / `replication` / `index` / `connection` / `buffer` / `constraint`）一律抛 `UnsupportedOperationException("Doris 不支持 <X> 风格的 <Y>。")`；收到**未识别**名称则抛 `IllegalArgumentException`（与 MySQL / 达梦一致）。
 - `analyze_workload_indexes` 从 `__internal_schema.audit_log` 取高成本查询，结合 `information_schema.COLUMNS` 评估列基数，输出只读索引建议；`method='llm'` 返回占位说明。
-- `analyze_query_indexes` 接受最多 10 条 `SELECT`，对每条执行 `EXPLAIN <sql>`（不附加 `FORMAT=JSON`）并输出只读建议；`method='llm'` 返回占位说明。
+- `analyze_query_indexes` 接受最多 10 条 `SELECT`，对每条执行 `EXPLAIN <sql>`（不附加 `FORMAT=JSON`）并输出只读建议；`method` 仅支持 `dta`，为空时默认使用 `dta`。
 
 ### 限制
 

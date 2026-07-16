@@ -126,18 +126,6 @@ class DamengDiagnosticDialectTest {
         assertThatThrownBy(() -> dialect.analyzeQueryIndexes(List.of("WITH d AS (DELETE FROM USERS) SELECT * FROM USERS"), 1024, "dta"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("仅支持 SELECT 查询");
-        assertThatThrownBy(() -> dialect.analyzeQueryIndexes(List.of("DELETE FROM USERS"), 1024, "llm"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("仅支持 SELECT 查询");
-        assertThatThrownBy(() -> dialect.analyzeQueryIndexes(List.of("SELECT 1; DROP TABLE USERS"), 1024, "llm"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("拒绝多语句 SQL");
-        assertThatThrownBy(() -> dialect.analyzeQueryIndexes(List.of("SELECT '--'; DROP TABLE USERS"), 1024, "llm"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("拒绝多语句 SQL");
-        assertThatThrownBy(() -> dialect.analyzeQueryIndexes(List.of("WITH d AS (DELETE FROM USERS) SELECT * FROM USERS"), 1024, "llm"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("仅支持 SELECT 查询");
         assertThatThrownBy(() -> dialect.analyzeQueryIndexes(
             List.of("SELECT 1", "SELECT 2", "SELECT 3", "SELECT 4", "SELECT 5", "SELECT 6", "SELECT 7", "SELECT 8", "SELECT 9", "SELECT 10", "SELECT 11"),
             1024,
@@ -151,8 +139,6 @@ class DamengDiagnosticDialectTest {
     void llm方法返回暂未接入说明() {
         DamengDiagnosticDialect dialect = new DamengDiagnosticDialect(new RecordingSqlClient());
 
-        assertThat(dialect.analyzeQueryIndexes(List.of("SELECT * FROM USERS"), 1024, "llm"))
-            .contains("LLM 索引优化方法").contains("method='dta'");
         assertThat(dialect.analyzeWorkloadIndexes(1024, "llm"))
             .contains("LLM 索引优化方法").contains("method='dta'");
     }

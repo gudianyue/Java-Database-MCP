@@ -215,15 +215,6 @@ class MySqlDiagnosticDialectTest {
             .hasMessageContaining("非空");
     }
 
-    @Test
-    void analyzeQueryIndexesDefersLlmMethod() {
-        MySqlDiagnosticDialect dialect = createDialect(new RecordingSqlClient());
-
-        String result = dialect.analyzeQueryIndexes(List.of("SELECT * FROM users"), 10000, "llm");
-
-        assertThat(result).contains("LLM 索引优化方法").contains("规则引擎评分");
-    }
-
     // ==================== 辅助类 ====================
 
     private static MySqlDiagnosticDialect createDialect(RecordingSqlClient sqlClient) {

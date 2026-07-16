@@ -18,6 +18,9 @@ import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 
 class DatabaseToolFacadePermissionTest {
@@ -75,6 +78,34 @@ class DatabaseToolFacadePermissionTest {
         order.verify(enforcer).authorize(publicSql, "user-1");
         order.verify(diagnosticDialectProvider).current();
         order.verify(dialect).analyzeQueryIndexes(queries, 10000, "dta");
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = " ")
+    void analyzeQueryIndexesDefaultsMissingMethodToDta(String method) {
+        List<String> queries = List.of("select * from public.orders");
+        DiagnosticDialect dialect = mock(DiagnosticDialect.class);
+        when(diagnosticDialectProvider.current()).thenReturn(dialect);
+        when(dialect.analyzeQueryIndexes(queries, 10000, "dta")).thenReturn("indexes");
+
+        String result = facade.analyzeQueryIndexes(queries, null, method, "user-1");
+
+        org.assertj.core.api.Assertions.assertThat(result).isEqualTo("indexes");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "unsupported", "DTA" })
+    void analyzeQueryIndexesRejectsUnsupportedMethodBeforeAuthorization(String method) {
+        String result = facade.analyzeQueryIndexes(
+            List.of("select * from public.orders"),
+            10000,
+            method,
+            "user-1"
+        );
+
+        org.assertj.core.api.Assertions.assertThat(result).contains("仅支持 dta");
+        verifyNoInteractions(enforcer, diagnosticDialectProvider, sqlClient);
     }
 
     @Test

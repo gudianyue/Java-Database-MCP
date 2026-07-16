@@ -120,9 +120,6 @@ public class DamengDiagnosticDialect implements DiagnosticDialect {
         for (String query : queries) {
             ReadOnlyQueryValidator.validateSelectSingleStatement(query);
         }
-        if (isLlmMethod(method)) {
-            return llmDeferredMessage();
-        }
         StringBuilder builder = new StringBuilder(
             "达梦查询索引建议（method=rule_engine, max_index_size_mb=" + maxIndexSizeMb + "）"
         );

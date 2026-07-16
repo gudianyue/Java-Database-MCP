@@ -521,9 +521,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
         if (queries.size() > MAX_NUM_INDEX_TUNING_QUERIES) {
             throw new IllegalArgumentException("请提供最多 " + MAX_NUM_INDEX_TUNING_QUERIES + " 条 SQL 查询。");
         }
-        if (usesLlm(method)) {
-            return llmDeferredMessage();
-        }
         List<WorkloadQuery> workload = queries.stream()
             .filter(query -> query != null && !query.isBlank())
             .map(query -> new WorkloadQuery(query, 1.0))

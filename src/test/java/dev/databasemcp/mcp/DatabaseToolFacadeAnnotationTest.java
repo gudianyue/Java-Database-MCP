@@ -50,6 +50,26 @@ class DatabaseToolFacadeAnnotationTest {
     }
 
     @Test
+    void queryIndexMethodSchemaOnlyAdvertisesDta() throws Exception {
+        Method method = DatabaseToolFacade.class.getDeclaredMethod(
+            "analyzeQueryIndexes",
+            List.class,
+            Integer.class,
+            String.class,
+            String.class
+        );
+
+        String description = new ObjectMapper()
+            .readTree(JsonSchemaGenerator.generateForMethodInput(method))
+            .path("properties")
+            .path("method")
+            .path("description")
+            .asText();
+
+        assertThat(description).contains("dta").doesNotContainIgnoringCase("llm");
+    }
+
+    @Test
     void sqlToolsExposeUserIdentityOnly() throws NoSuchMethodException {
         assertPermissionParametersVisible(DatabaseToolFacade.class.getDeclaredMethod(
             "executeSql",

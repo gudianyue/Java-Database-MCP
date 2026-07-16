@@ -171,15 +171,6 @@ class DorisDiagnosticDialectTest {
     }
 
     @Test
-    void analyzeQueryIndexes_llm_returnsDeferredMessage() {
-        DorisDiagnosticDialect dialect = new DorisDiagnosticDialect(new RecordingSqlClient());
-
-        String result = dialect.analyzeQueryIndexes(List.of("SELECT 1"), 1024, "llm");
-
-        assertThat(result).contains("LLM");
-    }
-
-    @Test
     void analyzeHealth_errorMessageIsMasked() {
         DorisDiagnosticDialect dialect = new DorisDiagnosticDialect(new ThrowingSqlClient("password=hunter2 leakage"));
 

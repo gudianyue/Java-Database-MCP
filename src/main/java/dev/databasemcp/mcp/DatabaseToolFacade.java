@@ -137,19 +137,34 @@ public class DatabaseToolFacade {
     public String analyzeQueryIndexes(
         @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
-        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method,
+        @McpToolParam(description = "分析方法：仅支持 dta；为空时默认 dta") String method,
         @McpToolParam(description = "user_id: caller identity supplied by the Agent; always pass this value") String user_id
     ) {
         try {
+            String normalizedMethod = normalizeIndexAnalysisMethod(method);
             if (queries != null) {
                 for (String query : queries) {
                     permissionEnforcer.authorize(query, user_id);
                 }
             }
-            return diagnosticDialectProvider.current().analyzeQueryIndexes(queries, maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
+            return diagnosticDialectProvider.current().analyzeQueryIndexes(
+                queries,
+                maxIndexSizeMb == null ? 10000 : maxIndexSizeMb,
+                normalizedMethod
+            );
         } catch (Exception e) {
             return error(e);
         }
+    }
+
+    private static String normalizeIndexAnalysisMethod(String method) {
+        if (method == null || method.isBlank()) {
+            return "dta";
+        }
+        if (!"dta".equals(method)) {
+            throw new IllegalArgumentException("分析方法仅支持 dta");
+        }
+        return "dta";
     }
 
     private static String defaultObjectType(String objectType) {

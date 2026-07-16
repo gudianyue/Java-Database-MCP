@@ -29,7 +29,7 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 - 慢查询统计：`get_top_queries`，优先读取 `V$SQL_HISTORY`，支持 `mean_time`、`total_time`、`executions`
 - 健康检查：`analyze_db_health`，支持 `index`、`connection`、`wait`、`storage`、`sequence`、`buffer`、`constraint`、`all`
 - 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，只做只读分析和建议输出，不自动创建索引
-- 不支持项：`extension` 对象、`analyze=true`、`hypothetical_indexes`、`method='llm'` 暂不支持
+- 不支持项：`extension` 对象、`analyze=true`、`hypothetical_indexes`；`analyze_workload_indexes` 的 `method='llm'` 暂不支持
 
 ### Apache Doris
 
@@ -38,7 +38,7 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 - 慢查询统计：`get_top_queries`，从 `__internal_schema.audit_log` 聚合 SQL 摘要，支持 `mean_time`、`total_time`、`executions`，依赖审计插件
 - 健康检查：`analyze_db_health`，使用独立的 `doris_*` 原语命名空间（`doris_audit_log` / `doris_compaction` / `doris_tablet_health` / `all`），PG/MySQL/达梦遗留的 10 个健康检查名会抛 `UnsupportedOperationException`
 - 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，从 `__internal_schema.audit_log` 和 `EXPLAIN` 输出只读建议
-- 不支持项：`sequence` / `extension` 对象、`analyze=true`、`hypothetical_indexes`、`method='llm'` 暂不支持
+- 不支持项：`sequence` / `extension` 对象、`analyze=true`、`hypothetical_indexes`；`analyze_workload_indexes` 的 `method='llm'` 暂不支持
 
 ## 指标权限
 

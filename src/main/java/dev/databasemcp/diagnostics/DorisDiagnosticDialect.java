@@ -135,9 +135,6 @@ public class DorisDiagnosticDialect implements DiagnosticDialect {
         for (String query : queries) {
             ReadOnlyQueryValidator.validateSelectSingleStatement(query);
         }
-        if (isLlmMethod(method)) {
-            return llmDeferredMessage();
-        }
         StringBuilder builder = new StringBuilder(
             "Doris 查询索引建议（method=dta, max_index_size_mb=" + maxIndexSizeMb + "）"
         );
