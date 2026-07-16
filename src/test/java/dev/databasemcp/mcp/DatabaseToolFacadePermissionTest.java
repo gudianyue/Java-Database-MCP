@@ -1,7 +1,5 @@
 package dev.databasemcp.mcp;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -15,8 +13,6 @@ import dev.databasemcp.permission.MetricPermissionEnforcer;
 import dev.databasemcp.permission.ConservativeMetricSqlInspector;
 import dev.databasemcp.permission.MetricScope;
 import dev.databasemcp.permission.PermissionScope;
-import dev.databasemcp.permission.PermissionContext;
-import dev.databasemcp.permission.PermissionUsage;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
@@ -45,10 +41,10 @@ class DatabaseToolFacadePermissionTest {
         String sql = "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'";
         when(sqlClient.query(sql)).thenReturn(new QueryResult(List.of(Map.of("ok", true))));
 
-        facade.executeSql(sql, "metric", "user-1", scopes());
+        facade.executeSql(sql, "user-1");
 
         InOrder order = inOrder(enforcer, sqlClient);
-        order.verify(enforcer).authorize(eq(sql), any(PermissionContext.class), eq(PermissionUsage.EXECUTE));
+        order.verify(enforcer).authorize(sql, "user-1");
         order.verify(sqlClient).query(sql);
     }
 
@@ -57,26 +53,29 @@ class DatabaseToolFacadePermissionTest {
         String sql = "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'";
         when(explainPlanService.explain(sql, false, List.of())).thenReturn("plan");
 
-        facade.explainQuery(sql, false, List.of(), "metric", "user-1", scopes());
+        facade.explainQuery(sql, false, List.of(), "user-1");
 
         InOrder order = inOrder(enforcer, explainPlanService);
-        order.verify(enforcer).authorize(eq(sql), any(PermissionContext.class), eq(PermissionUsage.EXPLAIN));
+        order.verify(enforcer).authorize(sql, "user-1");
         order.verify(explainPlanService).explain(sql, false, List.of());
     }
 
     @Test
     void analyzeQueryIndexesAuthorizesEveryQueryBeforeAnalyzing() {
-        String sql = "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'";
+        String protectedSql = "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'";
+        String publicSql = "select * from public.orders";
+        List<String> queries = List.of(protectedSql, publicSql);
         DiagnosticDialect dialect = mock(DiagnosticDialect.class);
         when(diagnosticDialectProvider.current()).thenReturn(dialect);
-        when(dialect.analyzeQueryIndexes(List.of(sql), 10000, "dta")).thenReturn("indexes");
+        when(dialect.analyzeQueryIndexes(queries, 10000, "dta")).thenReturn("indexes");
 
-        facade.analyzeQueryIndexes(List.of(sql), 10000, "dta", "metric", "user-1", scopes());
+        facade.analyzeQueryIndexes(queries, 10000, "dta", "user-1");
 
         InOrder order = inOrder(enforcer, diagnosticDialectProvider, dialect);
-        order.verify(enforcer).authorize(eq(sql), any(PermissionContext.class), eq(PermissionUsage.ANALYZE_INDEX));
+        order.verify(enforcer).authorize(protectedSql, "user-1");
+        order.verify(enforcer).authorize(publicSql, "user-1");
         order.verify(diagnosticDialectProvider).current();
-        order.verify(dialect).analyzeQueryIndexes(List.of(sql), 10000, "dta");
+        order.verify(dialect).analyzeQueryIndexes(queries, 10000, "dta");
     }
 
     @Test
@@ -102,13 +101,9 @@ class DatabaseToolFacadePermissionTest {
             union all select * from gkschema.gk_qta_data
             """;
 
-        String result = realFacade.executeSql(sql, "metric", "user-1", scopes());
+        String result = realFacade.executeSql(sql, "user-1");
 
         org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
         verifyNoInteractions(sqlClient);
-    }
-
-    private static List<Map<String, Object>> scopes() {
-        return List.of(Map.of("quota_id", "A", "quota_scene", "default"));
     }
 }

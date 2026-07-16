@@ -20,7 +20,7 @@ public class MetricPermissionEnforcer {
         this.provider = provider;
     }
 
-    public void authorize(String sql, PermissionContext context, PermissionUsage usage) {
+    public void authorize(String sql, String userId) {
         MetricSqlInspection inspection = inspector.inspect(sql);
         if (!inspection.protectedResource()) {
             return;
@@ -28,18 +28,16 @@ public class MetricPermissionEnforcer {
         if (!inspection.inspectable()) {
             deny(inspection.errorCode());
         }
-        if (context == null || !context.hasMetricContext()) {
+        String effectiveUserId = userId == null ? "" : userId.trim();
+        if (effectiveUserId.isBlank()) {
             deny(PermissionErrorCode.PERMISSION_CONTEXT_MISSING);
-        }
-        if (!inspection.metricScopes().equals(context.metricScopes())) {
-            deny(PermissionErrorCode.PERMISSION_SQL_MISMATCH);
         }
         if (provider == null) {
             deny(PermissionErrorCode.PERMISSION_PLUGIN_DISABLED_OR_MISSING);
         }
         PermissionScope authorizedScopes;
         try {
-            authorizedScopes = provider.authorizedScopes(context.userId());
+            authorizedScopes = provider.authorizedScopes(effectiveUserId);
         } catch (MetricPermissionProviderTimeoutException e) {
             deny(PermissionErrorCode.PERMISSION_PROVIDER_TIMEOUT);
             return;
@@ -47,7 +45,7 @@ public class MetricPermissionEnforcer {
             deny(PermissionErrorCode.PERMISSION_PROVIDER_UNAVAILABLE);
             return;
         }
-        if (authorizedScopes == null || !authorizedScopes.containsAll(context.metricScopes())) {
+        if (authorizedScopes == null || !authorizedScopes.containsAll(inspection.metricScopes())) {
             deny(PermissionErrorCode.PERMISSION_DENIED);
         }
     }

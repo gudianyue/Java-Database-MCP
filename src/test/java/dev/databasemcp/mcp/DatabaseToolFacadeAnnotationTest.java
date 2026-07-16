@@ -2,14 +2,20 @@ package dev.databasemcp.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
+import org.springaicommunity.mcp.method.tool.utils.JsonSchemaGenerator;
 
 class DatabaseToolFacadeAnnotationTest {
 
@@ -44,32 +50,56 @@ class DatabaseToolFacadeAnnotationTest {
     }
 
     @Test
-    void sqlToolsExposeMetricPermissionParameters() throws NoSuchMethodException {
+    void sqlToolsExposeUserIdentityOnly() throws NoSuchMethodException {
         assertPermissionParametersVisible(DatabaseToolFacade.class.getDeclaredMethod(
             "executeSql",
             String.class,
-            String.class,
-            String.class,
-            List.class
+            String.class
         ));
         assertPermissionParametersVisible(DatabaseToolFacade.class.getDeclaredMethod(
             "explainQuery",
             String.class,
             Boolean.class,
             List.class,
-            String.class,
-            String.class,
-            List.class
+            String.class
         ));
         assertPermissionParametersVisible(DatabaseToolFacade.class.getDeclaredMethod(
             "analyzeQueryIndexes",
             List.class,
             Integer.class,
             String.class,
-            String.class,
-            String.class,
-            List.class
+            String.class
         ));
+
+        assertThat(Arrays.stream(DatabaseToolFacade.class.getDeclaredMethods())
+            .filter(method -> Set.of("executeSql", "explainQuery", "analyzeQueryIndexes").contains(method.getName())))
+            .hasSize(3);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("permissionProtectedMethods")
+    void permissionProtectedToolsExposeSnakeCaseUserIdSchemaProperty(Method method) throws Exception {
+        JsonNode properties = new ObjectMapper()
+            .readTree(JsonSchemaGenerator.generateForMethodInput(method))
+            .path("properties");
+
+        assertThat(properties.has("user_id"))
+            .as("%s schema properties should contain user_id", method.getName())
+            .isTrue();
+        assertThat(properties.has("userId"))
+            .as("%s schema properties should not contain userId", method.getName())
+            .isFalse();
+        assertThat(method.getParameters()[method.getParameterCount() - 1].getName())
+            .as("%s final Java parameter name", method.getName())
+            .isEqualTo("user_id");
+    }
+
+    private static Stream<Method> permissionProtectedMethods() throws NoSuchMethodException {
+        return Stream.of(
+            DatabaseToolFacade.class.getDeclaredMethod("executeSql", String.class, String.class),
+            DatabaseToolFacade.class.getDeclaredMethod("explainQuery", String.class, Boolean.class, List.class, String.class),
+            DatabaseToolFacade.class.getDeclaredMethod("analyzeQueryIndexes", List.class, Integer.class, String.class, String.class)
+        );
     }
 
     private static void assertPermissionParametersVisible(java.lang.reflect.Method method) {
@@ -80,8 +110,8 @@ class DatabaseToolFacadeAnnotationTest {
             .collect(Collectors.joining("\n"));
 
         assertThat(descriptions)
-            .contains("permission_domain")
             .contains("user_id")
-            .contains("metric_scopes");
+            .doesNotContain("permission_domain")
+            .doesNotContain("metric_scopes");
     }
 }

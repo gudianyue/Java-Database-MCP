@@ -1,241 +1,216 @@
-# 权限控制说明
+# 指标 SQL 权限控制
 
----
+## 1. 概述
 
-## 1. 一句话总结
+Database MCP 可以对配置为受保护表的指标 SQL 做服务端权限校验。权限范围以 `(quota_id, quota_scene)` 表示，并且只从 SQL 条件派生；调用方不能声明或覆盖请求范围。
 
-Database MCP 在原有结构查看 / SQL 执行 / 诊断工具之上，新增了一层**面向「指标类敏感表」的强制权限控制**。该控制默认**关闭**，由部署方按需开启；开启后，访问受保护表的 SQL 必须同时通过「调用方声明 + 服务端 SQL 解析 + 鉴权后端核验」三道关，任一不过即拒绝执行。
+该能力默认关闭。`execute_sql`、`explain_query` 和 `analyze_query_indexes` 在执行、解释或分析 SQL 之前都会先经过 Inspector。Inspector 在识别表之前执行全局安全分词：无法安全 tokenize、存在未闭合结构或 MySQL 可执行注释时，会直接按 `permission_sql_uninspectable` fail-closed，即使 SQL 只查询公开表，甚至受保护表配置为空。通过该前置检查后，只有 Inspector 能可靠识别为未引用受保护表的 SQL 才立即放行；引用受保护表且无法安全形成有限、完整 `MetricScope` 集合的写法仍按“无法解析即拒绝”处理。
 
-它解决的是：「指标数据按 `quota_id / quota_scene` 维度授权」这一具体业务场景下，**谁能在 MCP 里跑哪些 SQL** 的问题。
+本项目不负责认证用户身份。Agent 或上游系统必须固定传入 `user_id`，并对它的真实性、稳定性以及与最终用户的绑定关系负责。
 
----
+## 2. 工具请求契约
 
-## 2. 控制范围：管什么、不管什么
+三个受控工具只接收原有业务参数和 `user_id`，Java 签名为：
 
-### 2.1 强制鉴权（涉及以下 MCP 工具的「指标类 SQL」分支）
-
-- `execute_sql`：执行 SQL
-- `explain_query`：解释 SQL（含 `analyze` / `hypothetical_indexes`）
-- `analyze_query_indexes`：对一批 SQL 做索引分析（**逐条**鉴权）
-
-只要被调用的 SQL **引用了受保护表**，就会进入鉴权链路。
-
-### 2.2 不强制鉴权（保持原行为）
-
-- `list_schemas`、`list_objects`、`get_object_details`：结构查看类
-- `get_top_queries`、`analyze_db_health`、`analyze_workload_indexes`：诊断类（只读汇总）
-
-这三类工具**始终**无需 `permission_domain / user_id / metric_scopes` 入参，也不查任何鉴权后端。
-
-### 2.3 受保护的对象
-
-通过配置项 `database-mcp.permission.metric.protected-tables` 显式声明，例如：
-
-```
-database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data
+```java
+executeSql(String sql, String user_id)
+explainQuery(String sql, Boolean analyze, List hypotheticalIndexes, String user_id)
+analyzeQueryIndexes(List queries, Integer maxIndexSizeMb, String method, String user_id)
 ```
 
-- 只接受**白名单**形式：未列出的表**不**在权限控制范围之内，原样放行。
-- 表名按 `schema.table` 归一化比较（忽略大小写与下划线差异）。
+Agent 必须在每次调用这三个工具时传 `user_id`。`analyze_query_indexes` 会逐条检查 `queries` 中的 SQL，并为每条使用同一个 `user_id`。
 
----
-
-## 3. 调用方契约：调用时必须多带三个参数
-
-`execute_sql` / `explain_query` / `analyze_query_indexes` 在调用指标类 SQL 时，必须显式提供：
-
-| 参数 | 含义 | 是否必填 |
-| --- | --- | --- |
-| `permission_domain` | 权限域。当前固定取值 `metric`，传 `none` 或留空等同放弃鉴权 | 指标类 SQL 必填 |
-| `user_id` | 调用方业务用户 ID | 指标类 SQL 必填 |
-| `metric_scopes` | 一组 `{quota_id, quota_scene}` 元组，表示**本条 SQL 实际要查的指标范围** | 指标类 SQL 必填 |
-
-请求示例：
+`execute_sql` 请求示例：
 
 ```json
 {
-  "sql": "SELECT quota_value FROM gkschema.gk_qta_data WHERE quota_id = 'Q001' AND quota_scene = 'monthly'",
-  "permission_domain": "metric",
-  "user_id": "zhangsan",
-  "metric_scopes": [
-    { "quota_id": "Q001", "quota_scene": "monthly" }
-  ]
+  "sql": "SELECT quota_value FROM gkschema.gk_qta_data WHERE quota_id = 'A' AND quota_scene = 'default'",
+  "user_id": "user-123"
 }
 ```
 
-> **关键约束**：调用方声明的 `metric_scopes` 必须**与 SQL WHERE 子句中能从受保护表上提取出的范围完全一致**，否则被拒。详见第 6 节。
+运行时的处理边界如下：
 
----
+- Inspector 首先做全局安全分词；无法安全 tokenize、未闭合结构或 MySQL 可执行注释会在识别受保护表之前 fail-closed。
+- 通过前置检查且能可靠识别为未引用受保护表的 SQL 才立即放行，不调用权限 Provider；此时即使 `user_id` 为 `null`、空串或全空白也不会阻止执行。
+- SQL 引用受保护表时，先确认 SQL 可安全检查，再对 `user_id` 做 `trim` 并校验非空。
+- 因此，“可靠识别为非受保护的 SQL 可在空 `user_id` 下执行”是服务端防护边界，不是 Agent 可以省略参数的兼容契约。Agent 仍须始终传入 `user_id`。
 
-## 4. 鉴权数据流（一次成功调用）
+其他工具（如 `list_schemas`、`list_objects`、`get_object_details`、`get_top_queries`、`analyze_db_health`、`analyze_workload_indexes`）没有 `user_id` 参数，也不进入本权限链路。
 
+## 3. 鉴权数据流
+
+一次调用按以下顺序处理：
+
+1. `DatabaseToolFacade` 把原 SQL 与 `user_id` 交给 `MetricPermissionEnforcer`。`analyze_query_indexes` 对列表逐条执行此步骤。
+2. `ConservativeMetricSqlInspector` 先 tokenize SQL 并检查全局不安全结构。分词不可靠、结构未闭合或存在 MySQL 可执行注释时，立即 fail-closed，返回 `permission_sql_uninspectable`。
+3. 前置检查通过后，Inspector 判断是否引用 `protected-tables` 中的表；只有能可靠识别为未引用受保护表时才立即放行。
+4. 命中受保护表后，Inspector 继续检查 SQL 结构，并仅从受保护表的范围条件中派生 `requestedScopes`。
+5. SQL 不可检查，或不能形成有限且同时包含两维的完整范围集合时，fail-closed，返回 `permission_sql_uninspectable`。
+6. 对 `user_id` 做 `trim`；缺失或为空则返回 `permission_context_missing`。
+7. 唯一的 `MetricPermissionProvider` 根据规范化后的 `user_id` 返回 `authorizedScopes`。
+8. 仅当 `authorizedScopes.containsAll(requestedScopes)` 时放行。Provider 返回 `null`、空范围或缺少任一请求范围时返回 `permission_denied`。
+9. 鉴权通过后才执行、解释或分析原 SQL。
+
+这里没有调用方范围与 SQL 范围的等值检查：请求范围的唯一来源就是 SQL。
+
+## 4. 可以安全放行的 SQL 形状
+
+以下示例假设 `gkschema.gk_qta_data` 是受保护表，范围列为 `quota_id` 和 `quota_scene`。SQL 能否最终执行还取决于 Provider 是否授权了全部派生范围。
+
+### 4.1 单值双维等值
+
+```sql
+SELECT quota_value
+FROM gkschema.gk_qta_data
+WHERE quota_id = 'A'
+  AND quota_scene = 'default'
 ```
-                    ┌─────────────────────────────────────┐
- MCP Client ─►►►    │  DatabaseToolFacade.executeSql      │
-                    │  → MetricPermissionEnforcer.authorize│
-                    └────────────────┬────────────────────┘
-                                     │
-            ┌────────────────────────┼─────────────────────────┐
-            ▼                        ▼                         ▼
-  ConservativeMetricSqlInspector   PermissionContext      MetricPermissionProvider
-  解析 SQL：                       组装：                  (ConfiguredSql 实现)：
-   · 是否引用受保护表？              · permission_domain     · 注入授权查询 SQL
-   · WHERE 范围是什么？             · user_id               · 绑定 user_id 参数
-   · 是否落到 {quota_id, scene}?   · metric_scopes         · 跑一次 SQL
-                                                             · 返回该用户的授权范围
-            │                        │                         │
-            └────────► 等值校验 ◄────┴────── 包含校验 ◄───────┘
-                          │
-                          ▼
-                    全部通过 → 放行执行原 SQL
+
+派生范围：`{(A, default)}`。
+
+### 4.2 一侧 `IN`，另一侧等值
+
+```sql
+SELECT quota_value
+FROM gkschema.gk_qta_data
+WHERE quota_id IN ('A', 'B')
+  AND quota_scene = 'default'
 ```
 
-### 关键步骤
+派生范围：`{(A, default), (B, default)}`。反过来写成 `quota_id = 'A' AND quota_scene IN ('default', 'custom')` 也可安全派生。
 
-1. **静态解析**：`ConservativeMetricSqlInspector` 对 SQL 做白名单式解析，识别是否引用受保护表、WHERE 范围是否可解析到 `(quota_id, quota_scene)` 元组。
-2. **上下文校验**：调用方必须给出 `permission_domain=metric`、非空 `user_id`、非空 `metric_scopes`。
-3. **声明 vs 解析等值校验**：解析出的元组集合 **必须等于** 声明的 `metric_scopes`（集合相等，不是包含）。
-4. **授权后端核验**：通过 `MetricPermissionProvider` 拉取该用户的所有授权范围，要求声明的 `metric_scopes` 是其**子集**。
+### 4.3 两侧 `IN` 的有限笛卡尔积
 
-任一环节失败，调用立即被拒，原 SQL **不会执行**。
+```sql
+SELECT quota_value
+FROM gkschema.gk_qta_data
+WHERE quota_id IN ('A', 'B')
+  AND quota_scene IN ('default', 'custom')
+```
 
----
+派生四个范围：`(A, default)`、`(A, custom)`、`(B, default)`、`(B, custom)`。Provider 必须授权全部四个范围。
 
-## 5. 鉴权后端（MetricPermissionProvider）
+### 4.4 tuple `IN` 的明确配对
 
-### 5.1 抽象接口
+```sql
+SELECT quota_value
+FROM gkschema.gk_qta_data
+WHERE (quota_id, quota_scene) IN (
+  ('A', 'default'),
+  ('B', 'custom')
+)
+```
 
-服务内置 `MetricPermissionProvider` 函数式接口：
+派生范围仅为两个明确配对：`{(A, default), (B, custom)}`，不会生成笛卡尔积。
+
+tuple `IN` 不能再与单列范围条件混用；单列两维条件也不能重复约束同一维。
+
+### 4.5 普通列的附加 `AND` 过滤
+
+范围条件固定后，可以通过 `AND` 增加不引用范围列的普通过滤，包括普通比较、数值条件、括号化 `OR` 与普通 `NOT`：
+
+```sql
+SELECT quota_value
+FROM gkschema.gk_qta_data
+WHERE quota_id = 'A'
+  AND quota_scene = 'default'
+  AND amount > 0
+  AND (status = 'ACTIVE' OR status = 'PENDING')
+  AND NOT (is_deleted = 1)
+```
+
+这里 `amount`、`status`、`is_deleted` 都只是额外 filter，不属于 scope。`OR` / `NOT` 不得作用于 `quota_id` 或 `quota_scene`；`WHERE` 顶层的 `OR` 仍会拒绝，因为它可能绕过固定范围。
+
+在多表查询中，受保护表只能出现一次，并且范围列必须无歧义地绑定到该表；推荐始终使用受保护表别名限定范围列。
+
+## 5. 继续拒绝的 SQL 边界
+
+以下写法只要涉及受保护表，就返回 `permission_sql_uninspectable`：
+
+- `quota_id` 或 `quota_scene` 上使用 `OR`、`NOT`，包括用 `OR` 拼接多个看似完整的范围元组。
+- `WHERE` 顶层使用 `OR`（以及可产生同类逃逸的 `XOR`、`||`）。
+- 范围列使用 `>`、`>=`、`<`、`<=`、`!=`、`<>`、`LIKE` 等范围或比较形式。
+- 范围值使用参数占位符、列/函数/算术表达式，或使用空、`null` 文本及畸形 `IN` 列表；当前白名单只接受非空字符串字面量。
+- 缺少 `quota_id` 或 `quota_scene` 任一维，或者完全没有 `WHERE`。
+- tuple `IN` 与单列范围条件混用，或重复约束同一范围维度。
+- CTE、子查询、PostgreSQL `TABLE` query expression、`UNION`、`INTERSECT`、`EXCEPT`（以及 `MINUS`）；Inspector 不解释 `TABLE` 这种替代查询表达式，涉及受保护表时会保守拒绝。
+- PostgreSQL `ONLY` 关系修饰符，包括 `ONLY table`、`ONLY (table)` 以及可选尾随 `*`；Inspector 暂不解释这些关系语义，涉及受保护表时会保守拒绝，能可靠识别为仅引用公开表的 SQL 仍按 fast path 放行。
+- 多个 SQL 语句，或用分号追加另一条语句。受保护 SQL 应只提供单条查询并省略末尾分号。
+- 同一 SQL 中出现多个受保护表关系；或范围列绑定到其他表、在多表关系中无法确认归属。
+- 受保护表上的非受支持语句（例如当前无法检查的 DML）或其他不在白名单内的结构。
+
+此外，无法安全 tokenize、不闭合的字符串/标识符/注释以及 MySQL 可执行注释属于全局前置 fail-closed 例外。`--` 后存在非 whitespace/control 字符时具有跨方言歧义，会被保守拒绝；后接 whitespace/control 或 EOF 的正常行注释仍受支持。PostgreSQL dollar-quoted string 暂不解释，检测到 `$$` 或 `$tag$` opener 即保守拒绝。PostgreSQL Unicode escaped quoted identifier `U&"..." [UESCAPE ...]` 暂不解释，检测到 token boundary 上紧邻的 `U&"` 即保守拒绝；这不泛化到 `U&'...'` 单引号字符串。DM8 Q/q delimiter quoted literal 暂不解释，检测到 token boundary 上 q/Q 紧邻单引号的 opener 时即保守拒绝；这不泛化到普通 q 标识符或与其分离的标准单引号字符串。单引号字符串或双引号构造中的反斜杠（包括反斜杠转义）因数据库方言和 SQL mode 存在歧义，也会被保守拒绝；单引号字符串应使用 SQL 标准双单引号 `''`，Agent 也应避免在受控 SQL 中使用这类写法。Inspector 在判断表是否受保护之前就拒绝这些输入，因此即使 SQL 只查询公开表或受保护表配置为空，也可能返回 `permission_sql_uninspectable`。
+
+示例：
+
+```sql
+-- 顶层 OR 可以逃逸固定范围：拒绝
+SELECT * FROM gkschema.gk_qta_data
+WHERE quota_id = 'A' AND quota_scene = 'default'
+   OR status = 'ACTIVE';
+
+-- OR 直接作用于范围列：拒绝
+SELECT * FROM gkschema.gk_qta_data
+WHERE (quota_id = 'A' OR quota_id = 'B')
+  AND quota_scene = 'default';
+
+-- 参数不能形成静态、有限范围：拒绝
+SELECT * FROM gkschema.gk_qta_data
+WHERE quota_id = ? AND quota_scene = 'default';
+
+-- 缺少一维：拒绝
+SELECT * FROM gkschema.gk_qta_data
+WHERE quota_id = 'A' AND quota_value > 0;
+```
+
+这是保守的安全白名单，不是完整 SQL 解析器。业务若需要放宽某种 SQL 形状，应先通过代码与安全测试扩展 Inspector，不能依赖调用方输入绕过检查。
+
+## 6. Provider、配置与缓存
+
+### 6.1 受保护对象与范围列
+
+核心配置示例：
+
+```properties
+database-mcp.permission.enabled=true
+database-mcp.permission.metric.enabled=true
+database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data
+database-mcp.permission.metric.metric-columns[0]=quota_id
+database-mcp.permission.metric.scene-columns[0]=quota_scene
+```
+
+权限关闭时，Inspector 的受保护表集合为空。能安全 tokenize、没有 MySQL 可执行注释且能可靠完成表识别的 SQL 会按未引用受保护表处理，不调用 Provider；全局前置 fail-closed 例外仍然生效，因此权限关闭不等于任意 SQL 都绝对放行。权限开启时，`MetricPermissionConfigurationValidator` 要求 `protected-tables`、`metric-columns`、`scene-columns` 均包含非空配置，并且恰好存在一个 `MetricPermissionProvider` Bean；否则启动失败。
+
+受保护表按配置名称或末级表名做大小写归一化匹配。通过全局前置检查后，只有配置为受保护的表进入指标范围鉴权；能可靠识别为未列入的表时立即放行且不调用 Provider。
+
+### 6.2 内置 SQL Provider
+
+Provider 接口为：
 
 ```java
 PermissionScope authorizedScopes(String userId);
 ```
 
-服务**仅提供一个内置实现**：`ConfiguredSqlMetricPermissionProvider`。
+内置 `ConfiguredSqlMetricPermissionProvider` 由 `database-mcp.permission.metric.provider.authorization-query` 启用。它把规范化后的 `user_id` 作为绑定参数执行授权查询，避免字符串拼接；授权查询必须恰好包含一个 `?`，或一个 `${user_id}` / `${p_user_id}` / `[${user_id}]` / `[${p_user_id}]` 占位符（后两种也支持外包单引号），并返回：
 
-### 5.2 内置实现：`ConfiguredSqlMetricPermissionProvider`
+- `quota_id`：指标 ID；
+- `quota_scenes`：该指标授权的一个或多个场景。
 
-- 由配置项 `database-mcp.permission.metric.provider.authorization-query` **存在**时启用（`@ConditionalOnProperty`）。
-- 执行该 SQL（将 SQL 中 `${user_id}` / `[${user_id}]` / `'[${user_id}]'` / `${p_user_id}` 等占位符统一替换为 `?`，再以参数化方式绑定 `userId`）。
-- **必须返回两列**：`quota_id`、`quota_scenes`（不区分大小写、忽略下划线）。
-- `quota_scenes` 字段会被按分隔符拆分，默认分隔符为 `,` `，` `;` `|`。
-- 默认查询超时 10 秒（可通过 `database-mcp.permission.metric.provider.timeout-seconds` 调整）。
+`quota_scenes` 可以是可迭代值或分隔字符串；字符串分隔符由 `scene-delimiters` 配置，默认是 `,`、`，`、`;`、`|`。空指标、空场景或缺少返回列会被视为 Provider 异常并 fail-closed。Provider 查询超时默认值是 10 秒，且必须大于 0。
 
-典型授权查询示例：
-
-```sql
-SELECT quota_id, quota_scenes
-FROM gkschema.user_metric_auth
-WHERE user_id = ?
-```
-
-对应一行记录形如：
-
-| user_id | quota_id | quota_scenes |
-| --- | --- | --- |
-| zhangsan | Q001 | monthly,quarterly |
-| zhangsan | Q002 | yearly |
-
-则 `zhangsan` 的授权范围 = `{(Q001, monthly), (Q001, quarterly), (Q002, yearly)}`。
-
-### 5.3 Redis 权限缓存
-
-内置 `ConfiguredSqlMetricPermissionProvider` 可通过 `database-mcp.permission.metric.provider.cache.enabled=true` 开启 Redis cache-aside：
-
-- 缓存 key 为 `database-mcp:permission:metric:v1:<sha256(userId)>`，即对 `user_id` 做 SHA-256 后拼接前缀，不暴露原始 `userId`。
-- 缓存 value 是该用户完整的 `PermissionScope` JSON。缓存条目从成功写入 Redis 时开始计时，经过配置的 `ttl-seconds` 后过期；读取命中不续期。对话生命周期与缓存无关；对话持续超过某条目的剩余 TTL 时，该条目过期后的下一次受保护查询会重新加载权限。
-- Redis miss、连接失败、读取超时或缓存值损坏时，直接回源授权数据库；损坏值会尽力删除。
-- 授权数据库查询成功后会尽力写入 Redis；写入失败仍使用本次查询得到的新鲜权限继续鉴权。
-- 授权数据库 timeout 或其他失败仍分别返回 `permission_provider_timeout` / `permission_provider_unavailable`，绝不使用过期值兜底，保持 fail-closed。
-- 空权限是合法且可缓存的结果，后续 `containsAll` 校验仍会拒绝无权请求。
-- Redis 是可丢失的共享加速层，不是权限权威源，可供多实例共享。第一版不提供 L1、本地缓存、分布式锁、Pub/Sub、对话缓存或主动失效。
-- 缓存命中只省去重复的授权 SQL，不绕过每次 SQL Inspector、上下文/声明等值校验和 `containsAll` 校验。
-- 权限新增或撤销的可见性延迟最长为实际配置的 `ttl-seconds`，默认 300 秒。
-
-### 5.4 自定义实现
-
-如需对接统一 IAM / 外部权限中心，可实现 `MetricPermissionProvider` 接口并注册为 Spring Bean。系统要求**同时只能存在一个**实现。
-
----
-
-## 6. SQL 解析规则（白名单式、保守）
-
-`ConservativeMetricSqlInspector` 采用「**无法解析即拒绝**」的保守策略，目的不是做完整 SQL 解析器，而是保证安全：
-
-### 6.1 必须满足的条件（缺一即拒）
-
-1. **单查询块**：SQL 内不能出现未转义的分号（`;`）。
-2. **禁止的关键字**：不得包含 `union` / `intersect` / `except` / `minus` / `not` / `with`。
-3. **不得使用 `OR`**：WHERE 中出现 `or` 视为无法收敛范围。
-4. **受保护表必须唯一**：FROM/JOIN 中只能命中**一个**受保护表。
-5. **必须存在 WHERE 谓词**，且谓词能落到受保护表的 `(quota_id, quota_scene)` 两列上。
-6. **引用形式**：通过 `schema.table` 或纯表名引用均可识别。
-
-### 6.2 提取出来的范围
-
-解析成功后，Inspector 返回一组 `MetricScope(quotaId, quotaScene)`，要求：
-
-- 与调用方声明的 `metric_scopes` **集合完全相等**（顺序无关）。
-- 如果声明多个 scope，WHERE 也必须能与之**一一对应**。
-
-### 6.3 解析失败的典型场景
-
-| 写法 | 原因 | 行为 |
-| --- | --- | --- |
-| `SELECT … WHERE quota_id = ? OR quota_scene = ?` | 含 `OR`，无法收敛 | 拒绝 |
-| `SELECT … FROM a JOIN b …` | 命中两个表且都受保护 | 拒绝 |
-| `WITH t AS (…) SELECT …` | 出现 CTE 关键字 `with` | 拒绝 |
-| `SELECT … FROM gkschema.gk_qta_data WHERE quota_value > 0` | 没有 `quota_id` / `quota_scene` 谓词 | 拒绝 |
-| `SELECT … FROM gkschema.gk_qta_data` | 无 WHERE | 拒绝 |
-| `SELECT … UNION SELECT …` | `union` 关键字 | 拒绝 |
-
----
-
-## 7. 错误码与原因（按出现顺序）
-
-调用被拒时，MCP 客户端会收到形如 `"错误：permission_xxx"` 的返回。**全部以 `permission_` 开头**便于业务侧识别：
-
-| 错误码 | 触发条件 | 责任方 |
-| --- | --- | --- |
-| `permission_sql_uninspectable` | SQL 不满足第 6 节的解析条件 | 调用方 / SQL 作者 |
-| `permission_context_missing` | 调用方未传 `permission_domain=metric` 或缺 `user_id` 或缺 `metric_scopes` | 调用方 |
-| `permission_sql_mismatch` | SQL 解析出的范围 ≠ 调用方声明的 `metric_scopes` | 调用方 |
-| `permission_plugin_disabled_or_missing` | 服务未配置任何 `MetricPermissionProvider` 实现 | 部署方 |
-| `permission_provider_timeout` | 鉴权后端 SQL 超过 `timeout-seconds` | 部署方（鉴权库性能 / 网络） |
-| `permission_provider_unavailable` | 鉴权后端 SQL 其他异常 | 部署方（鉴权库可用性） |
-| `permission_denied` | 鉴权后端返回的范围**不包含**声明的范围 | 业务授权数据 |
-
-> 部署方排查顺序建议：`plugin_disabled_or_missing` → `provider_unavailable` / `provider_timeout` → `sql_uninspectable` / `context_missing` / `sql_mismatch` → `denied`。
-
----
-
-## 8. 两种运行模式
-
-### 8.1 关闭模式（默认）
-
-- `database-mcp.permission.enabled=false`（或未设置）
-- `ConservativeMetricSqlInspector` 加载的受保护表为空，**所有 SQL 均不受检**。
-- 三个强制鉴权工具可以省略 `permission_domain / user_id / metric_scopes` 入参，行为与旧版本一致。
-
-### 8.2 开启模式
-
-使用内置 SQL Provider 的权限基础配置示例：
-
-```
-database-mcp.permission.enabled=true
-database-mcp.permission.metric.enabled=true
-database-mcp.permission.metric.protected-tables[0]=<schema>.<table>
-database-mcp.permission.metric.metric-columns[0]=quota_id
-database-mcp.permission.metric.scene-columns[0]=quota_scene
-database-mcp.permission.metric.provider.authorization-query=<授权 SQL，含一个 ? 占位符>
+```properties
+database-mcp.permission.metric.provider.authorization-query=SELECT quota_id, quota_scenes FROM user_metric_auth WHERE user_id = ?
 database-mcp.permission.metric.provider.timeout-seconds=10
 ```
 
-启用指标权限时，`MetricPermissionConfigurationValidator`（`InitializingBean`）仍按原规则强制检查 `protected-tables`、`metric-columns`、`scene-columns`，并要求恰好注册一个 `MetricPermissionProvider` Bean；上述示例使用内置 SQL Provider，因此配置了 `authorization-query`。
+也可以自行实现 `MetricPermissionProvider` 对接 IAM 或权限中心。使用自定义实现时不要配置内置授权查询，并确保 Spring 容器中最终只有一个 Provider Bean。
 
-Redis 缓存是可选能力，`cache.enabled` 默认为 `false`。如需启用，可在上述基础上追加：
+### 6.3 Redis 缓存
 
-```
+项目内置 `RedisMetricPermissionCache` 只由内置 `ConfiguredSqlMetricPermissionProvider` 消费，按 `user_id` 的 SHA-256 摘要作为键后缀，缓存该 Provider 返回的完整授权范围：
+
+```properties
 database-mcp.permission.metric.provider.cache.enabled=true
 database-mcp.permission.metric.provider.cache.ttl-seconds=300
 database-mcp.permission.metric.provider.cache.key-prefix=database-mcp:permission:metric:v1:
@@ -243,70 +218,38 @@ spring.data.redis.url=<Redis URL>
 spring.data.redis.timeout=200ms
 ```
 
-启用缓存时，`ttl-seconds` 必须大于 0、`key-prefix` 必须非空；两者的默认值分别为 `300` 和 `database-mcp:permission:metric:v1:`。`spring.data.redis.url` / `spring.data.redis.timeout` 是 Spring Redis 连接配置，不由 `MetricPermissionConfigurationValidator` 作为权限配置必填项检查；实际启用缓存时，部署方应提供可用的 Redis 连接。
+设置 `cache.enabled=true` 不会自动包装任意自定义 `MetricPermissionProvider`。自定义 Provider 如需缓存，必须自行实现缓存，或显式包装/调用缓存组件。
 
-启动校验不通过的常见情形：
+缓存默认关闭。启用时 `ttl-seconds` 必须大于 0，`key-prefix` 必须非空。缓存命中不续期；读取失败或缓存值损坏时回源 Provider，写入失败不会改变本次 Provider 结果。Provider 本身失败仍按相应错误码 fail-closed。
 
-- 任意一个白名单（`protected-tables` / `metric-columns` / `scene-columns`）为空或全空白
-- 没有注册任何 `MetricPermissionProvider` Bean
-- 注册了多个 `MetricPermissionProvider` Bean（要求恰好一个）
+## 7. 错误码与排查
 
----
+Facade 会把异常转换为包含下列稳定错误码的文本。除全局前置检查可能在表识别前返回 `permission_sql_uninspectable` 外，其余权限错误码产生于受保护 SQL 的鉴权链路。
 
-## 9. 需求方需要提供的输入清单
+| 错误码 | 含义 | 责任与排查建议 |
+| --- | --- | --- |
+| `permission_sql_uninspectable` | 受保护 SQL 无法形成有限、完整且安全的请求范围；或 SQL 在表识别前未通过全局安全分词 | SQL 作者：检查无法安全 tokenize、未闭合结构和 MySQL 可执行注释；对受保护 SQL 再按第 4 节白名单检查两维范围、`OR` / `NOT`、参数、集合操作、子查询和表关系 |
+| `permission_context_missing` | 受保护 SQL 的 `user_id` 缺失、为空或 trim 后为空 | Agent / 上游：确认每次调用都固定传入真实用户标识；此码不表示范围缺失 |
+| `permission_plugin_disabled_or_missing` | 可检查的受保护 SQL 没有可用的 `MetricPermissionProvider` | 部署方：确认权限开启配置、内置授权查询或自定义 Bean；启动校验正常情况下应更早发现此问题 |
+| `permission_provider_timeout` | Provider 授权查询超出 `timeout-seconds` | 部署方：检查授权库性能、网络与超时阈值，避免把超时当作无权限 |
+| `permission_provider_unavailable` | Provider 发生超时以外的运行异常 | 部署方：检查授权数据源、返回列/值、连接与自定义 Provider 日志 |
+| `permission_denied` | Provider 返回的授权范围为 `null`，或不包含 SQL 派生的全部请求范围 | 授权数据负责人：核对该 `user_id` 的 `quota_id` / `quota_scene` 授权；不要通过放宽 SQL 规避 |
 
-要让权限控制**可运行且无歧义**，需求 / 业务侧需向部署方明确以下事项：
+Inspector 在 `user_id` 校验之前运行。因此，同一条受保护 SQL 如果既不可检查又缺少 `user_id`，首先得到 `permission_sql_uninspectable`；全局前置检查失败时同样不会进入 `user_id` 或 Provider 校验。
 
-1. **受保护表的清单**：`schema.table` 列表，每个表必须是「按指标授权」的对象。
-2. **指标列与场景列的名称**：默认约定为 `quota_id` / `quota_scene`，如业务方使用其它字段名，需在下发配置时改写 `metric-columns` / `scene-columns`。
-3. **授权数据来源**：是直接查业务库（`ConfiguredSqlMetricPermissionProvider` 一条 SQL 解决），还是对接 IAM / 权限中心（需要自实现 `MetricPermissionProvider`）。
-4. **授权表的查询 SQL**：含一个 `?` 占位符（或 `${user_id}` / `[${user_id}]` 等约定写法），返回 `quota_id` / `quota_scenes` 两列；如 `quota_scenes` 不是字符串而是用其它分隔符或数组，需在配置中调整 `scene-delimiters`。
-5. **是否允许 `OR` / CTE / 多表连接**：默认**不允许**。若业务确实有此类需求，需要走「放宽白名单」的代码变更流程。
-6. **鉴权后端超时阈值**：默认 10 秒，按数据库性能约定。
-7. **错误处理策略**：MCP 客户端拿到 `permission_xxx` 错误码时如何呈现给最终用户（前端建议直接映射为 403 + 原因）。
+## 8. 与其他安全控制的关系
 
----
+- 指标范围鉴权只对引用受保护表的 SQL 生效，但无法安全 tokenize、未闭合结构和 MySQL 可执行注释仍受表识别前的全局 fail-closed 检查约束。本控制不替代 MCP 入口认证；Agent / 网关仍需认证用户并保护 `user_id` 不被伪造。
+- 本权限控制与 `SqlAccessMode`（`restricted` / `unrestricted`）正交：访问模式约束 SQL 操作类型，本控制约束能否读取受保护指标范围。
+- 本控制在 Java 层完成，不依赖数据库原生 RLS / GRANT；生产环境仍应使用最小权限数据库账号和网络访问控制。
+- Provider 查不到用户通常返回空授权范围并导致 `permission_denied`；Provider 查询异常则是 `permission_provider_unavailable`，两者应分别排查。
 
-## 10. 与既有功能的关系
+## 9. 部署核对清单
 
-- **与 `SqlAccessMode`（`restricted` / `unrestricted`）正交**：本权限控制独立于 SQL 执行模式的访问控制。`restricted` 控制「能否执行任意写语句」，本控制控制「能否读受保护的指标表」。
-- **与现有诊断工具无侵入**：`get_top_queries` / `analyze_db_health` / `analyze_workload_indexes` 不引用受保护表，因此不会被本控制拦截。
-- **与达梦 / MySQL / PostgreSQL 的方言差异解耦**：控制层完全在 Java 层做 SQL 解析与权限校验，不依赖数据库原生 RLS / GRANT。
-
----
-
-## 11. 常见误区
-
-- **「开启权限控制后，所有 SQL 都会被检查」**：错。只对**引用受保护表**的 SQL 生效。
-- **「调用方声明的范围越小越安全」**：错。声明范围必须**与 SQL WHERE 解析出的范围完全一致**，否则会被 `permission_sql_mismatch` 拒掉。
-- **「`metric_scopes` 是查询结果的过滤条件」**：错。它是**声明**，不是过滤；过滤由 SQL 本身负责。
-- **「鉴权后端查不到用户就是拒绝」**：错。后端返回空结果会得到 `permission_denied`；查询异常会得到 `permission_provider_unavailable`，二者不同。
-- **「可以同时启用多种鉴权后端」**：错。系统强制要求**恰好一个** `MetricPermissionProvider` Bean。
-
----
-
-## 12. 变更影响面
-
-- 新增包：`dev.databasemcp.permission`（enforcer、inspector、provider、context、scope 等）
-- 修改 MCP 入口：`DatabaseToolFacade` 的 `execute_sql` / `explain_query` / `analyze_query_indexes` 三个工具签名追加三个可选参数
-- 新增配置前缀：`database-mcp.permission.*`
-- 新增启动校验：`MetricPermissionConfigurationValidator`
-- 对其余 5 个 MCP 工具、方言实现、SQL 客户端**无侵入**
-
-涉及的具体代码位置（供开发 / 运维核对）：
-
-| 关注点 | 位置 |
-| --- | --- |
-| 入口与参数注入 | `src/main/java/dev/databasemcp/mcp/DatabaseToolFacade.java:75,94,162` |
-| 鉴权协调 | `src/main/java/dev/databasemcp/permission/MetricPermissionEnforcer.java:23` |
-| SQL 解析 | `src/main/java/dev/databasemcp/permission/ConservativeMetricSqlInspector.java:49` |
-| 鉴权后端默认实现 | `src/main/java/dev/databasemcp/permission/ConfiguredSqlMetricPermissionProvider.java:62` |
-| 启动校验 | `src/main/java/dev/databasemcp/permission/MetricPermissionConfigurationValidator.java:24` |
-| 配置项结构 | `src/main/java/dev/databasemcp/config/DatabaseMcpProperties.java:124,136,158,207` |
-
----
-
-## 13. 版本记录
-
-- 当前版本：随本次提交首次引入「指标类 SQL 权限控制」
-- 默认行为：关闭；不传新增参数时与旧版本行为完全一致（向后兼容）
+1. 确认受保护表、指标列和场景列配置准确。
+2. 确认 Agent 对三个受控工具始终传入经过认证绑定的 `user_id`。
+3. 确认内置授权查询或自定义 Provider 恰好提供一个 Bean。
+4. 确认授权结果覆盖 SQL 可能派生的全部笛卡尔积或 tuple 配对。
+5. 用第 4、5 节示例验证业务 SQL 形状；不可检查写法应在上线前改写。
+6. 若启用 Redis，确认 TTL、键前缀和连接可用，并接受缓存 TTL 内的授权变更延迟。
+7. 监控 Provider 超时、不可用、SQL 不可检查和拒绝错误码，分别交由正确责任方处理。

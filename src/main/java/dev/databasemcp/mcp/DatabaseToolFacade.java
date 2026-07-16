@@ -4,8 +4,6 @@ import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.permission.MetricPermissionEnforcer;
-import dev.databasemcp.permission.PermissionContext;
-import dev.databasemcp.permission.PermissionUsage;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -72,44 +70,28 @@ public class DatabaseToolFacade {
         }
     }
 
-    public String executeSql(@McpToolParam(description = "要执行的 SQL") String sql) {
-        return executeSql(sql, "none", null, List.of());
-    }
-
-    @McpTool(name = "execute_sql", description = "Execute SQL. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; server validates SQL evidence.")
+    @McpTool(name = "execute_sql", description = "Execute SQL. Always pass user_id; protected metric scopes are derived from the SQL.")
     public String executeSql(
         @McpToolParam(description = "要执行的 SQL") String sql,
-        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
-        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
-        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+        @McpToolParam(description = "user_id: caller identity supplied by the Agent; always pass this value") String user_id
     ) {
         try {
-            permissionEnforcer.authorize(sql, PermissionContext.of(permissionDomain, userId, metricScopes), PermissionUsage.EXECUTE);
+            permissionEnforcer.authorize(sql, user_id);
             return toText(sqlClient.query(sql));
         } catch (Exception e) {
             return error(e);
         }
     }
 
-    public String explainQuery(
-        @McpToolParam(description = "要解释的 SQL 查询") String sql,
-        @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
-        @McpToolParam(description = "在支持的数据库上评估的假设索引；不需要时传空列表") List<Map<String, Object>> hypotheticalIndexes
-    ) {
-        return explainQuery(sql, analyze, hypotheticalIndexes, "none", null, List.of());
-    }
-
-    @McpTool(name = "explain_query", description = "Explain SQL. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; server validates before EXPLAIN.")
+    @McpTool(name = "explain_query", description = "Explain SQL. Always pass user_id; protected metric scopes are derived from the SQL before EXPLAIN.")
     public String explainQuery(
         @McpToolParam(description = "要解释的 SQL 查询") String sql,
         @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
         @McpToolParam(description = "在支持的数据库上评估的假设索引；不需要时传空列表") List<Map<String, Object>> hypotheticalIndexes,
-        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
-        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
-        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+        @McpToolParam(description = "user_id: caller identity supplied by the Agent; always pass this value") String user_id
     ) {
         try {
-            permissionEnforcer.authorize(sql, PermissionContext.of(permissionDomain, userId, metricScopes), PermissionUsage.EXPLAIN);
+            permissionEnforcer.authorize(sql, user_id);
             return explainPlanService.explain(sql, Boolean.TRUE.equals(analyze), hypotheticalIndexes);
         } catch (Exception e) {
             return error(e);
@@ -151,28 +133,17 @@ public class DatabaseToolFacade {
         }
     }
 
-    public String analyzeQueryIndexes(
-        @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
-        @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
-        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method
-    ) {
-        return analyzeQueryIndexes(queries, maxIndexSizeMb, method, "none", null, List.of());
-    }
-
-    @McpTool(name = "analyze_query_indexes", description = "Analyze SQL queries for indexes. For metric SQL pass permission_domain=metric, user_id, and metric_scopes as quota_id/quota_scene tuples; every query is authorized first.")
+    @McpTool(name = "analyze_query_indexes", description = "Analyze SQL queries for indexes. Always pass user_id; every query is authorized from its SQL before analysis.")
     public String analyzeQueryIndexes(
         @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
         @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method,
-        @McpToolParam(description = "permission_domain: metric for protected metric SQL, none for non-metric SQL") String permissionDomain,
-        @McpToolParam(description = "user_id: required when permission_domain=metric") String userId,
-        @McpToolParam(description = "metric_scopes: list of {quota_id, quota_scene} tuples declared by the caller") List<Map<String, Object>> metricScopes
+        @McpToolParam(description = "user_id: caller identity supplied by the Agent; always pass this value") String user_id
     ) {
         try {
-            PermissionContext context = PermissionContext.of(permissionDomain, userId, metricScopes);
             if (queries != null) {
                 for (String query : queries) {
-                    permissionEnforcer.authorize(query, context, PermissionUsage.ANALYZE_INDEX);
+                    permissionEnforcer.authorize(query, user_id);
                 }
             }
             return diagnosticDialectProvider.current().analyzeQueryIndexes(queries, maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);

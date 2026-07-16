@@ -3,7 +3,6 @@ package dev.databasemcp.permission;
 public enum PermissionErrorCode {
     PERMISSION_DENIED("permission_denied"),
     PERMISSION_CONTEXT_MISSING("permission_context_missing"),
-    PERMISSION_SQL_MISMATCH("permission_sql_mismatch"),
     PERMISSION_SQL_UNINSPECTABLE("permission_sql_uninspectable"),
     PERMISSION_PROVIDER_UNAVAILABLE("permission_provider_unavailable"),
     PERMISSION_PROVIDER_TIMEOUT("permission_provider_timeout"),

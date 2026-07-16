@@ -38,16 +38,17 @@ class DamengMcpSmokeTest {
             DatabaseToolFacade facade = facade(properties, sqlClient);
             VisibleTable table = resolveVisibleTable(sqlClient);
             String smokeQuery = configuredQueryOrDefault(table);
+            String userId = "dameng-smoke";
 
-            assertSuccessful("execute_sql", facade.executeSql("SELECT 1 AS MCP_SMOKE_VALUE"));
+            assertSuccessful("execute_sql", facade.executeSql("SELECT 1 AS MCP_SMOKE_VALUE", userId));
             assertSuccessful("list_schemas", facade.listSchemas());
             assertSuccessful("list_objects", facade.listObjects(table.schemaName(), "table"));
             assertSuccessful("get_object_details", facade.getObjectDetails(table.schemaName(), table.tableName(), "table"));
-            assertSuccessful("explain_query", facade.explainQuery(smokeQuery, false, List.of()));
+            assertSuccessful("explain_query", facade.explainQuery(smokeQuery, false, List.of(), userId));
             assertSuccessful("get_top_queries", facade.getTopQueries("total_time", 5));
             assertSuccessful("analyze_db_health", facade.analyzeDbHealth("all"));
             assertSuccessful("analyze_workload_indexes", facade.analyzeWorkloadIndexes(10000, "dta"));
-            assertSuccessful("analyze_query_indexes", facade.analyzeQueryIndexes(List.of(smokeQuery), 10000, "dta"));
+            assertSuccessful("analyze_query_indexes", facade.analyzeQueryIndexes(List.of(smokeQuery), 10000, "dta", userId));
         }
     }
 
