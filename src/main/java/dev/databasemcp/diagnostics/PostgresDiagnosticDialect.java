@@ -9,7 +9,6 @@ import static dev.databasemcp.diagnostics.DiagnosticSupport.qualified;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.round;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.usesLlm;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -544,9 +543,6 @@ public class PostgresDiagnosticDialect implements DiagnosticDialect {
 
     @Override
     public String analyzeWorkloadIndexes(int maxIndexSizeMb, String method) {
-        if (usesLlm(method)) {
-            return llmDeferredMessage();
-        }
         if (!extensionService.isExtensionInstalled(PG_STAT_STATEMENTS)) {
             return pgStatStatementsInstallMessage();
         }
@@ -883,10 +879,6 @@ public class PostgresDiagnosticDialect implements DiagnosticDialect {
 
             Java 版本会用 HypoPG 创建会话级假设索引并比较 EXPLAIN 成本，不会真正创建物理索引。
             """.strip();
-    }
-
-    private static String llmDeferredMessage() {
-        return "LLM 索引优化方法保留为后续阶段接入；当前 Java 版本已实现 method='dta'。";
     }
 
     @FunctionalInterface

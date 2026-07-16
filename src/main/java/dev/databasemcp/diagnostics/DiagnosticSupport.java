@@ -61,10 +61,6 @@ final class DiagnosticSupport {
         return sql != null && sql.stripLeading().toLowerCase(Locale.ROOT).startsWith("select");
     }
 
-    static boolean usesLlm(String method) {
-        return "llm".equalsIgnoreCase(method == null || method.isBlank() ? "dta" : method);
-    }
-
     static String round(double value) {
         if (Double.isInfinite(value) || Double.isNaN(value)) {
             return String.valueOf(value);

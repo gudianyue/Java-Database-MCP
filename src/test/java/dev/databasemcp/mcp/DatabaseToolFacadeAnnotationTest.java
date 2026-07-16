@@ -59,14 +59,18 @@ class DatabaseToolFacadeAnnotationTest {
             String.class
         );
 
-        String description = new ObjectMapper()
-            .readTree(JsonSchemaGenerator.generateForMethodInput(method))
-            .path("properties")
-            .path("method")
-            .path("description")
-            .asText();
+        assertThat(methodParameterDescription(method)).isEqualTo("分析方法：仅支持 dta；为空时默认 dta");
+    }
 
-        assertThat(description).contains("dta").doesNotContainIgnoringCase("llm");
+    @Test
+    void workloadIndexMethodSchemaOnlyAdvertisesDta() throws Exception {
+        Method method = DatabaseToolFacade.class.getDeclaredMethod(
+            "analyzeWorkloadIndexes",
+            Integer.class,
+            String.class
+        );
+
+        assertThat(methodParameterDescription(method)).isEqualTo("分析方法：仅支持 dta；为空时默认 dta");
     }
 
     @Test
@@ -120,6 +124,15 @@ class DatabaseToolFacadeAnnotationTest {
             DatabaseToolFacade.class.getDeclaredMethod("explainQuery", String.class, Boolean.class, List.class, String.class),
             DatabaseToolFacade.class.getDeclaredMethod("analyzeQueryIndexes", List.class, Integer.class, String.class, String.class)
         );
+    }
+
+    private static String methodParameterDescription(Method method) throws Exception {
+        return new ObjectMapper()
+            .readTree(JsonSchemaGenerator.generateForMethodInput(method))
+            .path("properties")
+            .path("method")
+            .path("description")
+            .asText();
     }
 
     private static void assertPermissionParametersVisible(java.lang.reflect.Method method) {

@@ -135,14 +135,6 @@ class DamengDiagnosticDialectTest {
             .hasMessageContaining("最多支持 10 条");
     }
 
-    @Test
-    void llm方法返回暂未接入说明() {
-        DamengDiagnosticDialect dialect = new DamengDiagnosticDialect(new RecordingSqlClient());
-
-        assertThat(dialect.analyzeWorkloadIndexes(1024, "llm"))
-            .contains("LLM 索引优化方法").contains("method='dta'");
-    }
-
     private static QueryResult row(String key, Object value) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put(key, value);

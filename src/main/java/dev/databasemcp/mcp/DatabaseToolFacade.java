@@ -124,10 +124,14 @@ public class DatabaseToolFacade {
     @McpTool(name = "analyze_workload_indexes", description = "分析工作负载查询并给出索引建议")
     public String analyzeWorkloadIndexes(
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,
-        @McpToolParam(description = "分析方法：dta 或 llm；当前优先实现 dta") String method
+        @McpToolParam(description = "分析方法：仅支持 dta；为空时默认 dta") String method
     ) {
         try {
-            return diagnosticDialectProvider.current().analyzeWorkloadIndexes(maxIndexSizeMb == null ? 10000 : maxIndexSizeMb, method);
+            String normalizedMethod = normalizeIndexAnalysisMethod(method);
+            return diagnosticDialectProvider.current().analyzeWorkloadIndexes(
+                maxIndexSizeMb == null ? 10000 : maxIndexSizeMb,
+                normalizedMethod
+            );
         } catch (Exception e) {
             return error(e);
         }

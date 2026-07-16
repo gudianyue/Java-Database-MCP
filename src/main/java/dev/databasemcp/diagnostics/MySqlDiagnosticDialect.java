@@ -10,7 +10,6 @@ import static dev.databasemcp.diagnostics.DiagnosticSupport.round;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLongFromRow;
 import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.usesLlm;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -485,9 +484,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
         if (!featureService.isPerformanceSchemaEnabled()) {
             return featureService.performanceSchemaInstallMessage();
         }
-        if (usesLlm(method)) {
-            return llmDeferredMessage();
-        }
         QueryResult result = sqlClient.query(
             """
             SELECT
@@ -850,10 +846,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
             throw new IllegalArgumentException("非法标识符：" + value);
         }
         return "`" + value.replace("`", "``") + "`";
-    }
-
-    private static String llmDeferredMessage() {
-        return "LLM 索引优化方法保留为后续阶段接入；当前 MySQL 版本已实现 method='dta'（规则引擎评分）。";
     }
 
     @FunctionalInterface

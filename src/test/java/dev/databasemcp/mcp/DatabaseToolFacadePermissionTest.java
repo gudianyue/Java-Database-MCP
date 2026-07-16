@@ -62,6 +62,28 @@ class DatabaseToolFacadePermissionTest {
         order.verify(explainPlanService).explain(sql, false, List.of());
     }
 
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = { " ", "dta" })
+    void analyzeWorkloadIndexesNormalizesSupportedMethodsToDta(String method) {
+        DiagnosticDialect dialect = mock(DiagnosticDialect.class);
+        when(diagnosticDialectProvider.current()).thenReturn(dialect);
+        when(dialect.analyzeWorkloadIndexes(10000, "dta")).thenReturn("indexes");
+
+        String result = facade.analyzeWorkloadIndexes(null, method);
+
+        org.assertj.core.api.Assertions.assertThat(result).isEqualTo("indexes");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "unsupported", "DTA" })
+    void analyzeWorkloadIndexesRejectsUnsupportedMethodBeforeAnalysis(String method) {
+        String result = facade.analyzeWorkloadIndexes(10000, method);
+
+        org.assertj.core.api.Assertions.assertThat(result).contains("仅支持 dta");
+        verifyNoInteractions(diagnosticDialectProvider, sqlClient);
+    }
+
     @Test
     void analyzeQueryIndexesAuthorizesEveryQueryBeforeAnalyzing() {
         String protectedSql = "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'";

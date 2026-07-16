@@ -98,9 +98,6 @@ public class DorisDiagnosticDialect implements DiagnosticDialect {
 
     @Override
     public String analyzeWorkloadIndexes(int maxIndexSizeMb, String method) {
-        if (isLlmMethod(method)) {
-            return llmDeferredMessage();
-        }
         try {
             QueryResult result = sqlClient.query("""
                 SELECT *
@@ -266,14 +263,6 @@ public class DorisDiagnosticDialect implements DiagnosticDialect {
             }
         }
         return new ArrayList<>(types);
-    }
-
-    private static boolean isLlmMethod(String method) {
-        return "llm".equalsIgnoreCase(method == null || method.isBlank() ? "dta" : method);
-    }
-
-    private static String llmDeferredMessage() {
-        return "LLM 索引优化方法保留为后续阶段接入；当前 Doris 版本支持 method='dta' 的规则建议。";
     }
 
     @FunctionalInterface

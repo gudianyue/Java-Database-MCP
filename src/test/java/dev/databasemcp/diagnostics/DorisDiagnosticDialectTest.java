@@ -149,15 +149,6 @@ class DorisDiagnosticDialectTest {
     }
 
     @Test
-    void analyzeWorkloadIndexes_llm_returnsDeferredMessage() {
-        DorisDiagnosticDialect dialect = new DorisDiagnosticDialect(new RecordingSqlClient());
-
-        String result = dialect.analyzeWorkloadIndexes(1024, "llm");
-
-        assertThat(result).contains("LLM 索引优化方法保留为后续阶段接入");
-    }
-
-    @Test
     void analyzeQueryIndexes_selectIssuesPerQueryExplain() {
         RecordingSqlClient sqlClient = new RecordingSqlClient(row("plan", "NSET2"));
         DorisDiagnosticDialect dialect = new DorisDiagnosticDialect(sqlClient);
