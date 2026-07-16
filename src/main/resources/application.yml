@@ -1,4 +1,8 @@
 spring:
+#  data:
+#    redis:
+#      url: ${REDIS_URL}
+#      timeout: 200ms
   application:
     name: database-mcp-java
   main:
@@ -53,6 +57,10 @@ database-mcp:
   #         WHERE user_id = '${user_id}'
   #       scene-delimiters: [",", "，", ";", "|"]   # quota_scenes 拆分符；不配默认同上
   #       timeout-seconds: 10            # 超时→permission_provider_timeout
+  #       cache:
+  #         enabled: false              # 生产问数场景显式设为 true；默认 false
+  #         ttl-seconds: 300            # 固定 TTL，命中不续期
+  #         key-prefix: "database-mcp:permission:metric:v1:"
 
 # Doris 方言：通过 spring.profiles.active=doris 激活 application-doris.yml，
 # 或在启动时通过环境变量 DATABASE_TYPE=doris + DATABASE_URI=jdbc:mysql://host:9030/db 直接覆盖。

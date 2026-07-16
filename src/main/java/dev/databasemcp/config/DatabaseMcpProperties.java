@@ -209,6 +209,7 @@ public class DatabaseMcpProperties {
         private String authorizationQuery;
         private List<String> sceneDelimiters = List.of(",", "，", ";", "|");
         private int timeoutSeconds = 10;
+        private CacheProperties cache = new CacheProperties();
 
         public String getAuthorizationQuery() {
             return authorizationQuery;
@@ -234,6 +235,45 @@ public class DatabaseMcpProperties {
 
         public void setTimeoutSeconds(int timeoutSeconds) {
             this.timeoutSeconds = timeoutSeconds;
+        }
+
+        public CacheProperties getCache() {
+            return cache;
+        }
+
+        public void setCache(CacheProperties cache) {
+            this.cache = cache == null ? new CacheProperties() : cache;
+        }
+    }
+
+    public static class CacheProperties {
+
+        private boolean enabled;
+        private int ttlSeconds = 300;
+        private String keyPrefix = "database-mcp:permission:metric:v1:";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getTtlSeconds() {
+            return ttlSeconds;
+        }
+
+        public void setTtlSeconds(int ttlSeconds) {
+            this.ttlSeconds = ttlSeconds;
+        }
+
+        public String getKeyPrefix() {
+            return keyPrefix;
+        }
+
+        public void setKeyPrefix(String keyPrefix) {
+            this.keyPrefix = keyPrefix;
         }
     }
 }

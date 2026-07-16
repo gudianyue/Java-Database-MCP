@@ -96,6 +96,11 @@ class DatabaseMcpPropertiesTest {
         assertThat(properties.getPermission().getMetric().getMetricColumns()).isEmpty();
         assertThat(properties.getPermission().getMetric().getSceneColumns()).isEmpty();
         assertThat(properties.getPermission().getMetric().getProvider().getTimeoutSeconds()).isEqualTo(10);
+
+        DatabaseMcpProperties.CacheProperties cache = properties.getPermission().getMetric().getProvider().getCache();
+        assertThat(cache.isEnabled()).isFalse();
+        assertThat(cache.getTtlSeconds()).isEqualTo(300);
+        assertThat(cache.getKeyPrefix()).isEqualTo("database-mcp:permission:metric:v1:");
     }
 
     @Test

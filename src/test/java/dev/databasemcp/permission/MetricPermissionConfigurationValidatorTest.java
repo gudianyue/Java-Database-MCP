@@ -21,6 +21,17 @@ class MetricPermissionConfigurationValidatorTest {
     }
 
     @Test
+    void failsStartupWhenCacheTtlIsInvalidWhileMetricPermissionIsDisabled() {
+        contextRunner
+            .withPropertyValues(
+                "database-mcp.permission.metric.provider.cache.enabled=true",
+                "database-mcp.permission.metric.provider.cache.ttl-seconds=0"
+            )
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasMessageContaining("cache.ttl-seconds"));
+    }
+
+    @Test
     void failsStartupWhenEnabledConfigurationIsIncomplete() {
         contextRunner
             .withPropertyValues(
@@ -57,6 +68,38 @@ class MetricPermissionConfigurationValidatorTest {
                 "database-mcp.permission.metric.scene-columns[0]=quota_scene"
             )
             .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void failsStartupWhenEnabledCacheTtlIsNotPositive() {
+        contextRunner
+            .withPropertyValues(
+                "database-mcp.permission.enabled=true",
+                "database-mcp.permission.metric.enabled=true",
+                "database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data",
+                "database-mcp.permission.metric.metric-columns[0]=quota_id",
+                "database-mcp.permission.metric.scene-columns[0]=quota_scene",
+                "database-mcp.permission.metric.provider.cache.enabled=true",
+                "database-mcp.permission.metric.provider.cache.ttl-seconds=0"
+            )
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasMessageContaining("cache.ttl-seconds"));
+    }
+
+    @Test
+    void failsStartupWhenEnabledCacheKeyPrefixIsBlank() {
+        contextRunner
+            .withPropertyValues(
+                "database-mcp.permission.enabled=true",
+                "database-mcp.permission.metric.enabled=true",
+                "database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data",
+                "database-mcp.permission.metric.metric-columns[0]=quota_id",
+                "database-mcp.permission.metric.scene-columns[0]=quota_scene",
+                "database-mcp.permission.metric.provider.cache.enabled=true",
+                "database-mcp.permission.metric.provider.cache.key-prefix=   "
+            )
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasMessageContaining("cache.key-prefix"));
     }
 
     @Test

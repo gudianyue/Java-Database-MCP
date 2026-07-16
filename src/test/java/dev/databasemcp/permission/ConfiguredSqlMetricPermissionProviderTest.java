@@ -2,8 +2,12 @@ package dev.databasemcp.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
@@ -12,6 +16,8 @@ import dev.databasemcp.sql.SqlClient;
 import java.sql.SQLTimeoutException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -20,6 +26,69 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
 class ConfiguredSqlMetricPermissionProviderTest {
+
+    @Test
+    void returnsCachedScopeWithoutQueryingDatabase() {
+        SqlClient sqlClient = mock(SqlClient.class);
+        RedisMetricPermissionCache cache = mock(RedisMetricPermissionCache.class);
+        PermissionScope cachedScope = new PermissionScope(Set.of(new MetricScope("A", "default")));
+        when(cache.get("user-1")).thenReturn(Optional.of(cachedScope));
+        ConfiguredSqlMetricPermissionProvider provider = new ConfiguredSqlMetricPermissionProvider(
+            sqlClient,
+            "select quota_id, quota_scenes from auth where user_id = ?",
+            List.of(","),
+            10,
+            cache
+        );
+
+        PermissionScope result = provider.authorizedScopes("user-1");
+
+        assertThat(result).isSameAs(cachedScope);
+        verifyNoInteractions(sqlClient);
+    }
+
+    @Test
+    void loadsAndCachesScopeOnCacheMiss() {
+        SqlClient sqlClient = mock(SqlClient.class);
+        RedisMetricPermissionCache cache = mock(RedisMetricPermissionCache.class);
+        String query = "select quota_id, quota_scenes from auth where user_id = ?";
+        when(cache.get("user-1")).thenReturn(Optional.empty());
+        when(sqlClient.query(query, List.of("user-1"), 10))
+            .thenReturn(new QueryResult(List.of(Map.of("quota_id", "A", "quota_scenes", "default"))));
+        ConfiguredSqlMetricPermissionProvider provider = new ConfiguredSqlMetricPermissionProvider(
+            sqlClient,
+            query,
+            List.of(","),
+            10,
+            cache
+        );
+
+        PermissionScope result = provider.authorizedScopes("user-1");
+
+        assertThat(result.scopes()).containsExactly(new MetricScope("A", "default"));
+        verify(cache).put("user-1", result);
+    }
+
+    @Test
+    void cachesEmptyScopeReturnedByAuthorizationDatabase() {
+        SqlClient sqlClient = mock(SqlClient.class);
+        RedisMetricPermissionCache cache = mock(RedisMetricPermissionCache.class);
+        String query = "select quota_id, quota_scenes from auth where user_id = ?";
+        when(cache.get("user-1")).thenReturn(Optional.empty());
+        when(sqlClient.query(query, List.of("user-1"), 10)).thenReturn(QueryResult.empty());
+        ConfiguredSqlMetricPermissionProvider provider = new ConfiguredSqlMetricPermissionProvider(
+            sqlClient,
+            query,
+            List.of(","),
+            10,
+            cache
+        );
+
+        PermissionScope result = provider.authorizedScopes("user-1");
+
+        assertThat(result).isEqualTo(PermissionScope.empty());
+        verify(cache).put("user-1", result);
+    }
 
     @Test
     void splitsMultipleScenesIntoMetricScopeTuples() {
@@ -126,17 +195,43 @@ class ConfiguredSqlMetricPermissionProviderTest {
     @Test
     void translatesSqlTimeoutFromClient() {
         SqlClient sqlClient = mock(SqlClient.class);
+        RedisMetricPermissionCache cache = mock(RedisMetricPermissionCache.class);
         String query = "select quota_id, quota_scenes from auth where user_id = ?";
+        when(cache.get("user-1")).thenReturn(Optional.empty());
         when(sqlClient.query(query, List.of("user-1"), 10))
             .thenThrow(new IllegalStateException(new SQLTimeoutException("timed out")));
         ConfiguredSqlMetricPermissionProvider provider = new ConfiguredSqlMetricPermissionProvider(
             sqlClient,
             query,
-            List.of(",")
+            List.of(","),
+            10,
+            cache
         );
 
         assertThatThrownBy(() -> provider.authorizedScopes("user-1"))
             .isInstanceOf(MetricPermissionProviderTimeoutException.class);
+        verify(cache, never()).put(anyString(), any(PermissionScope.class));
+    }
+
+    @Test
+    void doesNotCacheWhenAuthorizationDatabaseFails() {
+        SqlClient sqlClient = mock(SqlClient.class);
+        RedisMetricPermissionCache cache = mock(RedisMetricPermissionCache.class);
+        RuntimeException failure = new RuntimeException("database failed");
+        String query = "select quota_id, quota_scenes from auth where user_id = ?";
+        when(cache.get("user-1")).thenReturn(Optional.empty());
+        when(sqlClient.query(query, List.of("user-1"), 10)).thenThrow(failure);
+        ConfiguredSqlMetricPermissionProvider provider = new ConfiguredSqlMetricPermissionProvider(
+            sqlClient,
+            query,
+            List.of(","),
+            10,
+            cache
+        );
+
+        assertThatThrownBy(() -> provider.authorizedScopes("user-1"))
+            .isSameAs(failure);
+        verify(cache, never()).put(anyString(), any(PermissionScope.class));
     }
 
     @Test

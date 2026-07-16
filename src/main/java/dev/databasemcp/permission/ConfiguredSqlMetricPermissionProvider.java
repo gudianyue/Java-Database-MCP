@@ -9,9 +9,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -23,19 +25,25 @@ public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionPr
     private final String authorizationQuery;
     private final List<String> sceneDelimiters;
     private final int timeoutSeconds;
+    private final RedisMetricPermissionCache cache;
 
     @Autowired
-    public ConfiguredSqlMetricPermissionProvider(SqlClient sqlClient, DatabaseMcpProperties properties) {
+    public ConfiguredSqlMetricPermissionProvider(
+        SqlClient sqlClient,
+        DatabaseMcpProperties properties,
+        ObjectProvider<RedisMetricPermissionCache> cacheProvider
+    ) {
         this(
             sqlClient,
             properties.getPermission().getMetric().getProvider().getAuthorizationQuery(),
             properties.getPermission().getMetric().getProvider().getSceneDelimiters(),
-            properties.getPermission().getMetric().getProvider().getTimeoutSeconds()
+            properties.getPermission().getMetric().getProvider().getTimeoutSeconds(),
+            cacheProvider.getIfAvailable()
         );
     }
 
     ConfiguredSqlMetricPermissionProvider(SqlClient sqlClient, String authorizationQuery, List<String> sceneDelimiters) {
-        this(sqlClient, authorizationQuery, sceneDelimiters, 10);
+        this(sqlClient, authorizationQuery, sceneDelimiters, 10, null);
     }
 
     ConfiguredSqlMetricPermissionProvider(
@@ -43,6 +51,16 @@ public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionPr
         String authorizationQuery,
         List<String> sceneDelimiters,
         int timeoutSeconds
+    ) {
+        this(sqlClient, authorizationQuery, sceneDelimiters, timeoutSeconds, null);
+    }
+
+    ConfiguredSqlMetricPermissionProvider(
+        SqlClient sqlClient,
+        String authorizationQuery,
+        List<String> sceneDelimiters,
+        int timeoutSeconds,
+        RedisMetricPermissionCache cache
     ) {
         if (authorizationQuery == null || authorizationQuery.isBlank()) {
             throw new IllegalArgumentException("authorizationQuery is required");
@@ -56,6 +74,7 @@ public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionPr
             ? List.of(",", "，", ";", "|")
             : List.copyOf(sceneDelimiters);
         this.timeoutSeconds = timeoutSeconds;
+        this.cache = cache;
     }
 
     @Override
@@ -63,6 +82,20 @@ public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionPr
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("userId is required");
         }
+        if (cache != null) {
+            Optional<PermissionScope> cachedScope = cache.get(userId);
+            if (cachedScope.isPresent()) {
+                return cachedScope.get();
+            }
+        }
+        PermissionScope scope = loadAuthorizedScopes(userId);
+        if (cache != null) {
+            cache.put(userId, scope);
+        }
+        return scope;
+    }
+
+    private PermissionScope loadAuthorizedScopes(String userId) {
         BoundAuthorizationQuery boundQuery = bindUserId(authorizationQuery, userId);
         QueryResult result;
         try {

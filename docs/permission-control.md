@@ -138,7 +138,21 @@ WHERE user_id = ?
 
 则 `zhangsan` 的授权范围 = `{(Q001, monthly), (Q001, quarterly), (Q002, yearly)}`。
 
-### 5.3 自定义实现
+### 5.3 Redis 权限缓存
+
+内置 `ConfiguredSqlMetricPermissionProvider` 可通过 `database-mcp.permission.metric.provider.cache.enabled=true` 开启 Redis cache-aside：
+
+- 缓存 key 为 `database-mcp:permission:metric:v1:<sha256(userId)>`，即对 `user_id` 做 SHA-256 后拼接前缀，不暴露原始 `userId`。
+- 缓存 value 是该用户完整的 `PermissionScope` JSON。缓存条目从成功写入 Redis 时开始计时，经过配置的 `ttl-seconds` 后过期；读取命中不续期。对话生命周期与缓存无关；对话持续超过某条目的剩余 TTL 时，该条目过期后的下一次受保护查询会重新加载权限。
+- Redis miss、连接失败、读取超时或缓存值损坏时，直接回源授权数据库；损坏值会尽力删除。
+- 授权数据库查询成功后会尽力写入 Redis；写入失败仍使用本次查询得到的新鲜权限继续鉴权。
+- 授权数据库 timeout 或其他失败仍分别返回 `permission_provider_timeout` / `permission_provider_unavailable`，绝不使用过期值兜底，保持 fail-closed。
+- 空权限是合法且可缓存的结果，后续 `containsAll` 校验仍会拒绝无权请求。
+- Redis 是可丢失的共享加速层，不是权限权威源，可供多实例共享。第一版不提供 L1、本地缓存、分布式锁、Pub/Sub、对话缓存或主动失效。
+- 缓存命中只省去重复的授权 SQL，不绕过每次 SQL Inspector、上下文/声明等值校验和 `containsAll` 校验。
+- 权限新增或撤销的可见性延迟最长为实际配置的 `ttl-seconds`，默认 300 秒。
+
+### 5.4 自定义实现
 
 如需对接统一 IAM / 外部权限中心，可实现 `MetricPermissionProvider` 接口并注册为 Spring Bean。系统要求**同时只能存在一个**实现。
 
@@ -205,6 +219,8 @@ WHERE user_id = ?
 
 ### 8.2 开启模式
 
+使用内置 SQL Provider 的权限基础配置示例：
+
 ```
 database-mcp.permission.enabled=true
 database-mcp.permission.metric.enabled=true
@@ -215,7 +231,19 @@ database-mcp.permission.metric.provider.authorization-query=<授权 SQL，含一
 database-mcp.permission.metric.provider.timeout-seconds=10
 ```
 
-启动时由 `MetricPermissionConfigurationValidator`（`InitializingBean`）做强制校验，**任何一项缺失即拒绝启动**，避免「开了权限但形同虚设」。
+启用指标权限时，`MetricPermissionConfigurationValidator`（`InitializingBean`）仍按原规则强制检查 `protected-tables`、`metric-columns`、`scene-columns`，并要求恰好注册一个 `MetricPermissionProvider` Bean；上述示例使用内置 SQL Provider，因此配置了 `authorization-query`。
+
+Redis 缓存是可选能力，`cache.enabled` 默认为 `false`。如需启用，可在上述基础上追加：
+
+```
+database-mcp.permission.metric.provider.cache.enabled=true
+database-mcp.permission.metric.provider.cache.ttl-seconds=300
+database-mcp.permission.metric.provider.cache.key-prefix=database-mcp:permission:metric:v1:
+spring.data.redis.url=<Redis URL>
+spring.data.redis.timeout=200ms
+```
+
+启用缓存时，`ttl-seconds` 必须大于 0、`key-prefix` 必须非空；两者的默认值分别为 `300` 和 `database-mcp:permission:metric:v1:`。`spring.data.redis.url` / `spring.data.redis.timeout` 是 Spring Redis 连接配置，不由 `MetricPermissionConfigurationValidator` 作为权限配置必填项检查；实际启用缓存时，部署方应提供可用的 Redis 连接。
 
 启动校验不通过的常见情形：
 

@@ -24,6 +24,19 @@ public class MetricPermissionConfigurationValidator implements InitializingBean 
     public void afterPropertiesSet() {
         DatabaseMcpProperties.PermissionProperties permission = properties.getPermission();
         DatabaseMcpProperties.MetricProperties metric = permission.getMetric();
+        DatabaseMcpProperties.CacheProperties cache = metric.getProvider().getCache();
+        if (cache.isEnabled()) {
+            if (cache.getTtlSeconds() <= 0) {
+                throw new IllegalStateException(
+                    "database-mcp.permission.metric.provider.cache.ttl-seconds must be greater than zero"
+                );
+            }
+            if (cache.getKeyPrefix() == null || cache.getKeyPrefix().isBlank()) {
+                throw new IllegalStateException(
+                    "database-mcp.permission.metric.provider.cache.key-prefix must not be blank"
+                );
+            }
+        }
         if (!permission.isEnabled() || !metric.isEnabled()) {
             return;
         }
