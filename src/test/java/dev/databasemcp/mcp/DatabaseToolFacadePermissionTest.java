@@ -1,5 +1,6 @@
 package dev.databasemcp.mcp;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -10,14 +11,12 @@ import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.permission.MetricPermissionEnforcer;
-import dev.databasemcp.permission.ConservativeMetricSqlInspector;
-import dev.databasemcp.permission.MetricScope;
-import dev.databasemcp.permission.PermissionScope;
+import dev.databasemcp.permission.PermissionDeniedException;
+import dev.databasemcp.permission.PermissionErrorCode;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
@@ -80,28 +79,15 @@ class DatabaseToolFacadePermissionTest {
 
     @Test
     void executeSqlRejectsUninspectableProtectedUnionBeforeQuerying() {
-        MetricPermissionEnforcer realEnforcer = new MetricPermissionEnforcer(
-            new ConservativeMetricSqlInspector(
-                Set.of("gkschema.gk_qta_data"),
-                Set.of("quota_id"),
-                Set.of("quota_scene")
-            ),
-            userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
-        );
-        DatabaseToolFacade realFacade = new DatabaseToolFacade(
-            databaseDialectProvider,
-            sqlClient,
-            explainPlanService,
-            diagnosticDialectProvider,
-            realEnforcer
-        );
         String sql = """
             select * from gkschema.gk_qta_data
             where quota_id = 'A' and quota_scene = 'default'
             union all select * from gkschema.gk_qta_data
             """;
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+            .when(enforcer).authorize(sql, "user-1");
 
-        String result = realFacade.executeSql(sql, "user-1");
+        String result = facade.executeSql(sql, "user-1");
 
         org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
         verifyNoInteractions(sqlClient);

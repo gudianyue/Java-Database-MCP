@@ -11,11 +11,11 @@ public class MetricPermissionEnforcer {
     private final MetricPermissionProvider provider;
 
     @Autowired
-    public MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, ObjectProvider<MetricPermissionProvider> providers) {
-        this(inspector, singleProvider(providers));
+    MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, ObjectProvider<MetricPermissionProvider> providers) {
+        this(inspector, providers.getIfUnique());
     }
 
-    public MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, MetricPermissionProvider provider) {
+    MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, MetricPermissionProvider provider) {
         this.inspector = inspector;
         this.provider = provider;
     }
@@ -26,7 +26,7 @@ public class MetricPermissionEnforcer {
             return;
         }
         if (!inspection.inspectable()) {
-            deny(inspection.errorCode());
+            deny(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
         }
         String effectiveUserId = userId == null ? "" : userId.trim();
         if (effectiveUserId.isBlank()) {
@@ -54,11 +54,4 @@ public class MetricPermissionEnforcer {
         throw new PermissionDeniedException(code);
     }
 
-    private static MetricPermissionProvider singleProvider(ObjectProvider<MetricPermissionProvider> providers) {
-        var availableProviders = providers.orderedStream().toList();
-        if (availableProviders.size() > 1) {
-            throw new IllegalStateException("exactly one MetricPermissionProvider must be configured");
-        }
-        return availableProviders.isEmpty() ? null : availableProviders.getFirst();
-    }
 }

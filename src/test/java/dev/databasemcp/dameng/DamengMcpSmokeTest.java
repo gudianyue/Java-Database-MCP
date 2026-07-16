@@ -1,6 +1,7 @@
 package dev.databasemcp.dameng;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
@@ -10,9 +11,7 @@ import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.diagnostics.PostgresExtensionService;
 import dev.databasemcp.dialect.DamengDatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
-import dev.databasemcp.permission.ConservativeMetricSqlInspector;
 import dev.databasemcp.permission.MetricPermissionEnforcer;
-import dev.databasemcp.permission.PermissionScope;
 import dev.databasemcp.mcp.DatabaseToolFacade;
 import dev.databasemcp.sql.JdbcSqlClient;
 import dev.databasemcp.sql.QueryResult;
@@ -97,10 +96,7 @@ class DamengMcpSmokeTest {
             sqlClient,
             new ExplainPlanService(sqlClient, new PostgresExtensionService(sqlClient), databaseDialectProvider),
             diagnosticDialectProvider,
-            new MetricPermissionEnforcer(
-                new ConservativeMetricSqlInspector(properties),
-                userId -> PermissionScope.empty()
-            )
+            mock(MetricPermissionEnforcer.class)
         );
     }
 

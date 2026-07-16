@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(name = "database-mcp.permission.metric.provider.authorization-query")
-public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionProvider {
+class ConfiguredSqlMetricPermissionProvider implements MetricPermissionProvider {
 
     private final SqlClient sqlClient;
     private final String authorizationQuery;
@@ -28,7 +28,7 @@ public class ConfiguredSqlMetricPermissionProvider implements MetricPermissionPr
     private final RedisMetricPermissionCache cache;
 
     @Autowired
-    public ConfiguredSqlMetricPermissionProvider(
+    ConfiguredSqlMetricPermissionProvider(
         SqlClient sqlClient,
         DatabaseMcpProperties properties,
         ObjectProvider<RedisMetricPermissionCache> cacheProvider

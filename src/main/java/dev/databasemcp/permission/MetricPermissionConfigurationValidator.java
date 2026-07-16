@@ -7,12 +7,12 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 @Component
-public class MetricPermissionConfigurationValidator implements InitializingBean {
+class MetricPermissionConfigurationValidator implements InitializingBean {
 
     private final DatabaseMcpProperties properties;
     private final ObjectProvider<MetricPermissionProvider> providers;
 
-    public MetricPermissionConfigurationValidator(
+    MetricPermissionConfigurationValidator(
         DatabaseMcpProperties properties,
         ObjectProvider<MetricPermissionProvider> providers
     ) {

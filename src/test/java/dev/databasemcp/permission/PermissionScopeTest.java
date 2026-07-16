@@ -14,8 +14,10 @@ class PermissionScopeTest {
             new MetricScope("B", "custom")
         ));
 
-        assertThat(scope.contains(new MetricScope("A", "default"))).isTrue();
-        assertThat(scope.contains(new MetricScope("B", "custom"))).isTrue();
-        assertThat(scope.contains(new MetricScope("A", "custom"))).isFalse();
+        assertThat(scope.containsAll(Set.of(
+            new MetricScope("A", "default"),
+            new MetricScope("B", "custom")
+        ))).isTrue();
+        assertThat(scope.containsAll(Set.of(new MetricScope("A", "custom")))).isFalse();
     }
 }

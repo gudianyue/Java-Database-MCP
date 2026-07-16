@@ -2,26 +2,48 @@ package dev.databasemcp.permission;
 
 import java.util.Set;
 
-public record MetricSqlInspection(
-    boolean protectedResource,
-    boolean inspectable,
-    Set<MetricScope> metricScopes,
-    PermissionErrorCode errorCode
-) {
+record MetricSqlInspection(Status status, Set<MetricScope> metricScopes) {
 
-    public MetricSqlInspection {
+    MetricSqlInspection {
+        if (status == null) {
+            throw new IllegalArgumentException("status is required");
+        }
         metricScopes = metricScopes == null ? Set.of() : Set.copyOf(metricScopes);
+        if (status == Status.INSPECTABLE && metricScopes.isEmpty()) {
+            throw new IllegalArgumentException("inspectable SQL must contain at least one metric scope");
+        }
+        if (status != Status.INSPECTABLE && !metricScopes.isEmpty()) {
+            throw new IllegalArgumentException("metric scopes are only valid for inspectable SQL");
+        }
     }
 
-    public static MetricSqlInspection notProtected() {
-        return new MetricSqlInspection(false, true, Set.of(), null);
+    static MetricSqlInspection notProtected() {
+        return new MetricSqlInspection(Status.NOT_PROTECTED, Set.of());
     }
 
-    public static MetricSqlInspection inspectable(Set<MetricScope> metricScopes) {
-        return new MetricSqlInspection(true, true, metricScopes, null);
+    static MetricSqlInspection inspectable(Set<MetricScope> metricScopes) {
+        return new MetricSqlInspection(Status.INSPECTABLE, metricScopes);
     }
 
-    public static MetricSqlInspection uninspectable() {
-        return new MetricSqlInspection(true, false, Set.of(), PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
+    static MetricSqlInspection uninspectable() {
+        return new MetricSqlInspection(Status.UNINSPECTABLE, Set.of());
+    }
+
+    boolean protectedResource() {
+        return status != Status.NOT_PROTECTED;
+    }
+
+    boolean inspectable() {
+        return status != Status.UNINSPECTABLE;
+    }
+
+    PermissionErrorCode errorCode() {
+        return status == Status.UNINSPECTABLE ? PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE : null;
+    }
+
+    enum Status {
+        NOT_PROTECTED,
+        INSPECTABLE,
+        UNINSPECTABLE
     }
 }

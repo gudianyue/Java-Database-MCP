@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ConservativeMetricSqlInspector {
+class ConservativeMetricSqlInspector {
 
     private static final Set<String> UNSUPPORTED_KEYWORDS = Set.of(
         "union", "intersect", "except", "minus", "with", "table", "only"
@@ -30,7 +30,7 @@ public class ConservativeMetricSqlInspector {
     private final Set<String> sceneColumns;
 
     @Autowired
-    public ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
+    ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
         this(
             properties.getPermission().isEnabled() && properties.getPermission().getMetric().isEnabled()
                 ? properties.getPermission().getMetric().getProtectedTables()
@@ -40,13 +40,13 @@ public class ConservativeMetricSqlInspector {
         );
     }
 
-    public ConservativeMetricSqlInspector(Set<String> protectedTables, Set<String> metricColumns, Set<String> sceneColumns) {
+    ConservativeMetricSqlInspector(Set<String> protectedTables, Set<String> metricColumns, Set<String> sceneColumns) {
         this.protectedTables = normalizeSet(protectedTables);
         this.metricColumns = normalizeSet(metricColumns);
         this.sceneColumns = normalizeSet(sceneColumns);
     }
 
-    public MetricSqlInspection inspect(String sql) {
+    MetricSqlInspection inspect(String sql) {
         Tokenization tokenization = tokenize(sql == null ? "" : sql);
         List<Token> tokens = tokenization.tokens();
         if (!tokenization.valid() || hasUnsafeExecutableComment(tokens)) {

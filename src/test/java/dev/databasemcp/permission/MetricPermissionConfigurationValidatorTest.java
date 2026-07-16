@@ -21,6 +21,13 @@ class MetricPermissionConfigurationValidatorTest {
     }
 
     @Test
+    void startsWhenMetricPermissionIsDisabledWithMultipleProviders() {
+        contextRunner
+            .withUserConfiguration(SecondProviderConfiguration.class)
+            .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
     void failsStartupWhenCacheTtlIsInvalidWhileMetricPermissionIsDisabled() {
         contextRunner
             .withPropertyValues(
@@ -133,7 +140,11 @@ class MetricPermissionConfigurationValidatorTest {
 
     @Configuration
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
-    @Import(MetricPermissionConfigurationValidator.class)
+    @Import({
+        ConservativeMetricSqlInspector.class,
+        MetricPermissionConfigurationValidator.class,
+        MetricPermissionEnforcer.class
+    })
     static class ValidatorConfiguration {
 
         @Bean

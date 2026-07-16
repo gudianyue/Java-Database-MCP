@@ -1,6 +1,7 @@
 package dev.databasemcp.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,13 @@ class ConservativeMetricSqlInspectorTest {
         Set.of("quota_id"),
         Set.of("quota_scene")
     );
+
+    @Test
+    void rejectsInspectableResultWithoutMetricScopes() {
+        assertThatThrownBy(() -> MetricSqlInspection.inspectable(Set.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("at least one metric scope");
+    }
 
     @Test
     void ignoresProtectedTableNamesInCommentsAndStrings() {
