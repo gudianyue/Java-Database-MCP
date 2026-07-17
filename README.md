@@ -42,7 +42,7 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 
 ## 指标权限
 
-`execute_sql`、`explain_query` 和 `analyze_query_indexes` 的调用方只需传原业务参数和 `user_id`。Agent 必须始终传入可信的 `user_id`；服务端不接受调用方声明权限范围，而是从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围，再与 Provider 返回的授权范围比较。只有引用配置中受保护表的 SQL 才进入该鉴权流程。
+`execute_sql`、`explain_query` 和 `analyze_query_indexes` 的调用方只需传原业务参数和 `user_id`。Agent 必须始终传入可信的 `user_id`；服务端不接受调用方声明权限范围，而是从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围，再与 Provider 返回的授权范围比较。权限开启时，所有 SQL 先按当前数据库方言通过 Druid AST 全局安全检查，只有可靠识别为未引用受保护表的查询才不调用 Provider；权限关闭时完全旁路 Druid 和 Provider。
 
 请求示例：
 

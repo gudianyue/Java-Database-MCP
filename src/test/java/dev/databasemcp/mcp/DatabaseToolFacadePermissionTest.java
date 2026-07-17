@@ -3,6 +3,7 @@ package dev.databasemcp.mcp;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -144,5 +145,36 @@ class DatabaseToolFacadePermissionTest {
 
         org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
         verifyNoInteractions(sqlClient);
+    }
+
+    @Test
+    void explainQueryRejectsBeforeExplaining() {
+        String sql = "select 'unclosed";
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+            .when(enforcer).authorize(sql, "user-1");
+
+        String result = facade.explainQuery(sql, false, List.of(), "user-1");
+
+        org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
+        verifyNoInteractions(explainPlanService);
+    }
+
+    @Test
+    void analyzeQueryIndexesRejectsBatchBeforeAnalysis() {
+        String allowedSql = "select * from public.orders";
+        String rejectedSql = "select 'unclosed";
+        String uncheckedSql = "select * from public.customers";
+        List<String> queries = List.of(allowedSql, rejectedSql, uncheckedSql);
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+            .when(enforcer).authorize(rejectedSql, "user-1");
+
+        String result = facade.analyzeQueryIndexes(queries, 10000, "dta", "user-1");
+
+        org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
+        InOrder order = inOrder(enforcer);
+        order.verify(enforcer).authorize(allowedSql, "user-1");
+        order.verify(enforcer).authorize(rejectedSql, "user-1");
+        verifyNoMoreInteractions(enforcer);
+        verifyNoInteractions(diagnosticDialectProvider);
     }
 }

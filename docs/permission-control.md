@@ -1,10 +1,12 @@
 # 指标 SQL 权限控制
 
+> 实现基线：指标权限分析已按已接受的方言感知 AST 决策完成迁移；固定使用 Alibaba Druid core `1.2.28`，不保留旧解析器回退。
+
 ## 1. 概述
 
 Database MCP 可以对配置为受保护表的指标 SQL 做服务端权限校验。权限范围以 `(quota_id, quota_scene)` 表示，并且只从 SQL 条件派生；调用方不能声明或覆盖请求范围。
 
-该能力默认关闭。`execute_sql`、`explain_query` 和 `analyze_query_indexes` 在执行、解释或分析 SQL 之前都会先经过 Inspector。Inspector 在识别表之前执行全局安全分词：无法安全 tokenize、存在未闭合结构或 MySQL 可执行注释时，会直接按 `permission_sql_uninspectable` fail-closed，即使 SQL 只查询公开表，甚至受保护表配置为空。通过该前置检查后，只有 Inspector 能可靠识别为未引用受保护表的 SQL 才立即放行；引用受保护表且无法安全形成有限、完整 `MetricScope` 集合的写法仍按“无法解析即拒绝”处理。
+该能力默认关闭。`execute_sql`、`explain_query` 和 `analyze_query_indexes` 在执行、解释或分析 SQL 之前都会先经过同一个 Inspector。权限开启时，Inspector 根据当前连接选择 PostgreSQL、MySQL、Doris 或达梦方言，并在识别表之前检查 64 KiB 长度上限、单语句、只读 `SELECT` 和完整 AST 解析；任一条件不能证明时直接按 `permission_sql_uninspectable` fail-closed，即使 SQL 只查询公开表。通过全局检查后，只有能可靠证明未引用受保护表的 SQL 才立即放行；引用受保护表且无法形成有限、完整 `MetricScope` 集合的写法仍按“不可检查即拒绝”处理。权限明确关闭时完全旁路 Druid 和 Provider，其他访问模式与只读 SQL 安全链仍独立生效。
 
 本项目不负责认证用户身份。Agent 或上游系统必须固定传入 `user_id`，并对它的真实性、稳定性以及与最终用户的绑定关系负责。
 
@@ -31,7 +33,8 @@ Agent 必须在每次调用这三个工具时传 `user_id`。`analyze_query_inde
 
 运行时的处理边界如下：
 
-- Inspector 首先做全局安全分词；无法安全 tokenize、未闭合结构或 MySQL 可执行注释会在识别受保护表之前 fail-closed。
+- 权限开启时，Inspector 首先按当前连接方言完成全局 AST 检查；超过 64 KiB、空输入、多语句、非 `SELECT`、解析失败、错误方言、未消费输入或 MySQL/Doris 可执行注释会在识别受保护表之前 fail-closed。
+- 权限关闭时，Inspector 在调用 Druid 之前直接旁路，不调用 Provider；这不会绕开 `SqlAccessMode`、只读查询校验或数据库自身权限。
 - 通过前置检查且能可靠识别为未引用受保护表的 SQL 才立即放行，不调用权限 Provider；此时即使 `user_id` 为 `null`、空串或全空白也不会阻止执行。
 - SQL 引用受保护表时，先确认 SQL 可安全检查，再对 `user_id` 做 `trim` 并校验非空。
 - 因此，“可靠识别为非受保护的 SQL 可在空 `user_id` 下执行”是服务端防护边界，不是 Agent 可以省略参数的兼容契约。Agent 仍须始终传入 `user_id`。
@@ -43,14 +46,15 @@ Agent 必须在每次调用这三个工具时传 `user_id`。`analyze_query_inde
 一次调用按以下顺序处理：
 
 1. `DatabaseToolFacade` 把原 SQL 与 `user_id` 交给 `MetricPermissionEnforcer`。`analyze_query_indexes` 对列表逐条执行此步骤。
-2. `ConservativeMetricSqlInspector` 先 tokenize SQL 并检查全局不安全结构。分词不可靠、结构未闭合或存在 MySQL 可执行注释时，立即 fail-closed，返回 `permission_sql_uninspectable`。
-3. 前置检查通过后，Inspector 判断是否引用 `protected-tables` 中的表；只有能可靠识别为未引用受保护表时才立即放行。
-4. 命中受保护表后，Inspector 继续检查 SQL 结构，并仅从受保护表的范围条件中派生 `requestedScopes`。
-5. SQL 不可检查，或不能形成有限且同时包含两维的完整范围集合时，fail-closed，返回 `permission_sql_uninspectable`。
-6. 对 `user_id` 做 `trim`；缺失或为空则返回 `permission_context_missing`。
-7. 唯一的 `MetricPermissionProvider` 根据规范化后的 `user_id` 返回 `authorizedScopes`。
-8. 仅当 `authorizedScopes.containsAll(requestedScopes)` 时放行。Provider 返回 `null`、空范围或缺少任一请求范围时返回 `permission_denied`。
-9. 鉴权通过后才执行、解释或分析原 SQL。
+2. 权限关闭时，`ConservativeMetricSqlInspector` 不调用 Druid，直接返回非受保护结果；权限开启时，根据当前 `DatabaseType` 选择 Druid 的 PostgreSQL、MySQL、Doris 或达梦方言解析整条 SQL。
+3. 启用状态下，空输入、超过 64 KiB、多语句、非 `SELECT`、方言不匹配、解析失败、未消费输入或可执行注释立即 fail-closed，返回 `permission_sql_uninspectable`。
+4. 前置检查通过后，Inspector 判断是否引用 `protected-tables` 中的表；只有能可靠识别为未引用受保护表时才立即放行。
+5. 命中受保护表后，Inspector 继续检查 SQL 结构，并仅从受保护表的范围条件中派生 `requestedScopes`。
+6. SQL 不可检查，或不能形成有限且同时包含两维的完整范围集合时，fail-closed，返回 `permission_sql_uninspectable`。
+7. 对 `user_id` 做 `trim`；缺失或为空则返回 `permission_context_missing`。
+8. 唯一的 `MetricPermissionProvider` 根据规范化后的 `user_id` 返回 `authorizedScopes`。
+9. 仅当 `authorizedScopes.containsAll(requestedScopes)` 时放行。Provider 返回 `null`、空范围或缺少任一请求范围时返回 `permission_denied`。
+10. 鉴权通过后才执行、解释或分析原 SQL；批量索引分析逐条使用同一个 `user_id` 授权，任一条拒绝则整批不进入分析。
 
 这里没有调用方范围与 SQL 范围的等值检查：请求范围的唯一来源就是 SQL。
 
@@ -140,7 +144,7 @@ WHERE quota_id = 'A'
 - 同一 SQL 中出现多个受保护表关系；或范围列绑定到其他表、在多表关系中无法确认归属。
 - 受保护表上的非受支持语句（例如当前无法检查的 DML）或其他不在白名单内的结构。
 
-此外，无法安全 tokenize、不闭合的字符串/标识符/注释以及 MySQL 可执行注释属于全局前置 fail-closed 例外。`--` 后存在非 whitespace/control 字符时具有跨方言歧义，会被保守拒绝；后接 whitespace/control 或 EOF 的正常行注释仍受支持。PostgreSQL dollar-quoted string 暂不解释，检测到 `$$` 或 `$tag$` opener 即保守拒绝。PostgreSQL Unicode escaped quoted identifier `U&"..." [UESCAPE ...]` 暂不解释，检测到 token boundary 上紧邻的 `U&"` 即保守拒绝；这不泛化到 `U&'...'` 单引号字符串。DM8 Q/q delimiter quoted literal 暂不解释，检测到 token boundary 上 q/Q 紧邻单引号的 opener 时即保守拒绝；这不泛化到普通 q 标识符或与其分离的标准单引号字符串。单引号字符串或双引号构造中的反斜杠（包括反斜杠转义）因数据库方言和 SQL mode 存在歧义，也会被保守拒绝；单引号字符串应使用 SQL 标准双单引号 `''`，Agent 也应避免在受控 SQL 中使用这类写法。Inspector 在判断表是否受保护之前就拒绝这些输入，因此即使 SQL 只查询公开表或受保护表配置为空，也可能返回 `permission_sql_uninspectable`。
+此外，权限开启时，空输入、超过 64 KiB、多语句、非 `SELECT`、错误方言、解析失败、未消费输入、可执行注释和无法安全解释的引用/转义结构都属于全局前置 fail-closed 边界。普通注释和优化器 hint 只有在 Druid 能把整条输入证明为单条受支持 `SELECT` 时才允许；MySQL/Doris 可执行注释始终拒绝。Inspector 在判断表是否受保护之前就拒绝这些输入，因此即使 SQL 只查询公开表也可能返回 `permission_sql_uninspectable`。权限关闭时不执行这些 AST 检查。
 
 示例：
 
@@ -164,7 +168,7 @@ SELECT * FROM gkschema.gk_qta_data
 WHERE quota_id = 'A' AND quota_value > 0;
 ```
 
-这是保守的安全白名单，不是完整 SQL 解析器。业务若需要放宽某种 SQL 形状，应先通过代码与安全测试扩展 Inspector，不能依赖调用方输入绕过检查。
+这是建立在完整方言 AST 解析之上的保守安全白名单，而不是对所有可解析 SQL 的授权承诺。业务若需要放宽某种 SQL 形状，应先定义范围传播语义并通过安全测试扩展 Inspector，不能依赖调用方输入或旧解析器回退绕过检查。
 
 ## 6. Provider、配置与缓存
 
@@ -180,7 +184,7 @@ database-mcp.permission.metric.metric-columns[0]=quota_id
 database-mcp.permission.metric.scene-columns[0]=quota_scene
 ```
 
-权限关闭时，Inspector 的受保护表集合为空。能安全 tokenize、没有 MySQL 可执行注释且能可靠完成表识别的 SQL 会按未引用受保护表处理，不调用 Provider；全局前置 fail-closed 例外仍然生效，因此权限关闭不等于任意 SQL 都绝对放行。权限开启时，`MetricPermissionConfigurationValidator` 要求 `protected-tables`、`metric-columns`、`scene-columns` 均包含非空配置，并且恰好存在一个 `MetricPermissionProvider` Bean；否则启动失败。
+权限关闭时，Inspector 的受保护表集合为空，并在调用 Druid 前直接返回，不解析 SQL、检查长度或调用 Provider；其他访问模式、只读 SQL 校验和数据库权限不受影响。权限开启时，`MetricPermissionConfigurationValidator` 要求 `protected-tables`、`metric-columns`、`scene-columns` 均包含非空配置，并且恰好存在一个 `MetricPermissionProvider` Bean；否则启动失败。
 
 受保护表按配置名称或末级表名做大小写归一化匹配。通过全局前置检查后，只有配置为受保护的表进入指标范围鉴权；能可靠识别为未列入的表时立即放行且不调用 Provider。
 
@@ -224,11 +228,11 @@ spring.data.redis.timeout=200ms
 
 ## 7. 错误码与排查
 
-Facade 会把异常转换为包含下列稳定错误码的文本。除全局前置检查可能在表识别前返回 `permission_sql_uninspectable` 外，其余权限错误码产生于受保护 SQL 的鉴权链路。
+Facade 会把异常转换为包含下列稳定错误码的文本。启用状态下的全局 AST 检查可能在表识别前返回 `permission_sql_uninspectable`，其余权限错误码产生于受保护 SQL 的鉴权链路。
 
 | 错误码 | 含义 | 责任与排查建议 |
 | --- | --- | --- |
-| `permission_sql_uninspectable` | 受保护 SQL 无法形成有限、完整且安全的请求范围；或 SQL 在表识别前未通过全局安全分词 | SQL 作者：检查无法安全 tokenize、未闭合结构和 MySQL 可执行注释；对受保护 SQL 再按第 4 节白名单检查两维范围、`OR` / `NOT`、参数、集合操作、子查询和表关系 |
+| `permission_sql_uninspectable` | 受保护 SQL 无法形成有限、完整且安全的请求范围；或 SQL 在表识别前未通过全局 AST 检查 | SQL 作者：检查长度、单语句、只读 `SELECT`、当前连接方言、完整解析和可执行注释；对受保护 SQL 再按第 4 节白名单检查两维范围、`OR` / `NOT`、参数、集合操作、子查询和表关系 |
 | `permission_context_missing` | 受保护 SQL 的 `user_id` 缺失、为空或 trim 后为空 | Agent / 上游：确认每次调用都固定传入真实用户标识；此码不表示范围缺失 |
 | `permission_plugin_disabled_or_missing` | 可检查的受保护 SQL 没有可用的 `MetricPermissionProvider` | 部署方：确认权限开启配置、内置授权查询或自定义 Bean；启动校验正常情况下应更早发现此问题 |
 | `permission_provider_timeout` | Provider 授权查询超出 `timeout-seconds` | 部署方：检查授权库性能、网络与超时阈值，避免把超时当作无权限 |
@@ -239,7 +243,7 @@ Inspector 在 `user_id` 校验之前运行。因此，同一条受保护 SQL 如
 
 ## 8. 与其他安全控制的关系
 
-- 指标范围鉴权只对引用受保护表的 SQL 生效，但无法安全 tokenize、未闭合结构和 MySQL 可执行注释仍受表识别前的全局 fail-closed 检查约束。本控制不替代 MCP 入口认证；Agent / 网关仍需认证用户并保护 `user_id` 不被伪造。
+- 指标范围鉴权只对引用受保护表的 SQL 生效，但权限开启时所有 SQL 都先受 64 KiB、单语句、只读 `SELECT`、当前连接方言和完整 AST 解析的全局 fail-closed 检查约束。本控制不替代 MCP 入口认证；Agent / 网关仍需认证用户并保护 `user_id` 不被伪造。
 - 本权限控制与 `SqlAccessMode`（`restricted` / `unrestricted`）正交：访问模式约束 SQL 操作类型，本控制约束能否读取受保护指标范围。
 - 本控制在 Java 层完成，不依赖数据库原生 RLS / GRANT；生产环境仍应使用最小权限数据库账号和网络访问控制。
 - Provider 查不到用户通常返回空授权范围并导致 `permission_denied`；Provider 查询异常则是 `permission_provider_unavailable`，两者应分别排查。
@@ -253,3 +257,4 @@ Inspector 在 `user_id` 校验之前运行。因此，同一条受保护 SQL 如
 5. 用第 4、5 节示例验证业务 SQL 形状；不可检查写法应在上线前改写。
 6. 若启用 Redis，确认 TTL、键前缀和连接可用，并接受缓存 TTL 内的授权变更延迟。
 7. 监控 Provider 超时、不可用、SQL 不可检查和拒绝错误码，分别交由正确责任方处理。
+8. 构建或发行前确认依赖树中的 Druid 为 `com.alibaba:druid:1.2.28`，并按 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 随发行物保留 Apache License 2.0 许可证和适用声明。

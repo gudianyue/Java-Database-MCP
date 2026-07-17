@@ -121,6 +121,51 @@ class MetricPermissionEnforcerTest {
     }
 
     @Test
+    void rejectsPartiallyAuthorizedScope() {
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
+            inspector,
+            userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
+        );
+
+        assertThatThrownBy(() -> enforcer.authorize(
+            "select * from gkschema.gk_qta_data where quota_id in ('A', 'B') and quota_scene = 'default'",
+            "user-1"
+        ))
+            .isInstanceOf(PermissionDeniedException.class)
+            .hasMessageContaining("permission_denied");
+    }
+
+    @Test
+    void rejectsEmptyProviderAuthorization() {
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
+            inspector,
+            userId -> PermissionScope.empty()
+        );
+
+        assertThatThrownBy(() -> enforcer.authorize(
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
+            "user-1"
+        ))
+            .isInstanceOf(PermissionDeniedException.class)
+            .hasMessageContaining("permission_denied");
+    }
+
+    @Test
+    void rejectsMissingContextBeforeMissingProvider() {
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
+            inspector,
+            (MetricPermissionProvider) null
+        );
+
+        assertThatThrownBy(() -> enforcer.authorize(
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
+            " "
+        ))
+            .isInstanceOf(PermissionDeniedException.class)
+            .hasMessageContaining("permission_context_missing");
+    }
+
+    @Test
     void rejectsNullProviderResult() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,
