@@ -37,6 +37,25 @@ class MetricPermissionEnforcerTest {
     }
 
     @Test
+    void bypassesParserAndProviderWhenMetricPermissionIsDisabled() {
+        ConservativeMetricSqlInspector disabledInspector = new ConservativeMetricSqlInspector(
+            DatabaseType.POSTGRESQL,
+            Set.of(),
+            Set.of("quota_id"),
+            Set.of("quota_scene")
+        );
+        AtomicBoolean called = new AtomicBoolean(false);
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(disabledInspector, userId -> {
+            called.set(true);
+            return PermissionScope.empty();
+        });
+
+        enforcer.authorize("select 'unclosed", null);
+
+        assertThat(called).isFalse();
+    }
+
+    @Test
     void rejectsProtectedSqlWhenUserIdIsMissing() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,

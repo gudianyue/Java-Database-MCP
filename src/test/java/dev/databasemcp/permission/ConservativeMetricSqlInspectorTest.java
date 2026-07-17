@@ -9,6 +9,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -61,6 +62,66 @@ class ConservativeMetricSqlInspectorTest {
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
     @Import(ConservativeMetricSqlInspector.class)
     static class InspectorTestConfiguration {
+    }
+
+    @Test
+    void bypassesSqlParsingWhenMetricPermissionIsDisabled() {
+        ConservativeMetricSqlInspector disabledInspector = new ConservativeMetricSqlInspector(
+            DatabaseType.POSTGRESQL,
+            Set.of(),
+            Set.of("quota_id"),
+            Set.of("quota_scene")
+        );
+
+        MetricSqlInspection inspection = disabledInspector.inspect("select 'unclosed");
+
+        assertThat(inspection.protectedResource()).isFalse();
+    }
+
+    @Test
+    void rejectsUnsupportedPublicStatementBeforePublicFastPath() {
+        MetricSqlInspection inspection = inspector.inspect("update public.orders set status = 'done'");
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
+    }
+
+    @Test
+    void rejectsMultiplePublicStatementsBeforePublicFastPath() {
+        MetricSqlInspection inspection = inspector.inspect("select 1 from public.orders; select 2");
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
+    }
+
+    @Test
+    void acceptsPublicSelectWithoutFromAfterDialectParsing() {
+        MetricSqlInspection inspection = inspector.inspect("select 1");
+
+        assertThat(inspection.protectedResource()).isFalse();
+        assertThat(inspection.inspectable()).isTrue();
+    }
+
+    @ParameterizedTest
+    @EnumSource(DatabaseType.class)
+    void inspectsSupportedMetricQueryWithConfiguredDialect(DatabaseType databaseType) {
+        ConservativeMetricSqlInspector dialectInspector = new ConservativeMetricSqlInspector(
+            databaseType,
+            Set.of("gkschema.gk_qta_data"),
+            Set.of("quota_id"),
+            Set.of("quota_scene")
+        );
+
+        MetricSqlInspection inspection = dialectInspector.inspect("""
+            select * from gkschema.gk_qta_data metric
+            where metric.quota_id in ('A', 'B') and metric.quota_scene = 'default'
+            """);
+
+        assertThat(inspection.inspectable()).isTrue();
+        assertThat(inspection.metricScopes()).containsExactlyInAnyOrder(
+            new MetricScope("A", "default"),
+            new MetricScope("B", "default")
+        );
     }
 
     @Test
@@ -854,11 +915,11 @@ class ConservativeMetricSqlInspectorTest {
     }
 
     @Test
-    void acceptsPostgresOnlyModifierForPublicSql() {
+    void rejectsPostgresOnlyModifierBeforePublicFastPath() {
         MetricSqlInspection inspection = inspector.inspect("select orders.id from only (public.orders) * orders");
 
-        assertThat(inspection.protectedResource()).isFalse();
-        assertThat(inspection.inspectable()).isTrue();
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
     }
 
     @Test
@@ -875,11 +936,11 @@ class ConservativeMetricSqlInspectorTest {
     }
 
     @Test
-    void acceptsPostgresTableQueryExpressionForPublicSql() {
+    void rejectsPostgresTableQueryExpressionBeforePublicFastPath() {
         MetricSqlInspection inspection = inspector.inspect("table public.orders");
 
-        assertThat(inspection.protectedResource()).isFalse();
-        assertThat(inspection.inspectable()).isTrue();
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
     }
 
     @Test

@@ -1,5 +1,26 @@
 package dev.databasemcp.permission;
 
+import com.alibaba.druid.DbType;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.ast.SQLExpr;
+import com.alibaba.druid.sql.ast.SQLStatement;
+import com.alibaba.druid.sql.ast.expr.SQLBinaryOpExpr;
+import com.alibaba.druid.sql.ast.expr.SQLBinaryOperator;
+import com.alibaba.druid.sql.ast.expr.SQLCharExpr;
+import com.alibaba.druid.sql.ast.expr.SQLIdentifierExpr;
+import com.alibaba.druid.sql.ast.expr.SQLInListExpr;
+import com.alibaba.druid.sql.ast.expr.SQLListExpr;
+import com.alibaba.druid.sql.ast.expr.SQLPropertyExpr;
+import com.alibaba.druid.sql.ast.statement.SQLExprTableSource;
+import com.alibaba.druid.sql.ast.statement.SQLJoinTableSource;
+import com.alibaba.druid.sql.ast.statement.SQLSelect;
+import com.alibaba.druid.sql.ast.statement.SQLSelectQueryBlock;
+import com.alibaba.druid.sql.ast.statement.SQLSelectStatement;
+import com.alibaba.druid.sql.ast.statement.SQLTableSource;
+import com.alibaba.druid.sql.parser.Lexer;
+import com.alibaba.druid.sql.parser.SQLParserUtils;
+import com.alibaba.druid.sql.parser.Token;
+import com.alibaba.druid.sql.visitor.SQLASTVisitorAdapter;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
 import java.util.ArrayList;
@@ -8,23 +29,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 class ConservativeMetricSqlInspector {
 
-    private static final Set<String> UNSUPPORTED_KEYWORDS = Set.of(
-        "union", "intersect", "except", "minus", "with", "table", "only"
-    );
-    private static final Set<String> WHERE_BOUNDARIES = Set.of(
-        "group", "order", "having", "limit", "offset", "fetch", "for",
-        "union", "intersect", "except", "minus"
-    );
-    private static final Set<String> RELATION_KEYWORDS = Set.of(
-        "where", "join", "left", "right", "full", "inner", "outer", "cross",
-        "on", "group", "order", "having", "limit", "offset", "fetch", "for",
-        "union", "intersect", "except", "minus"
+    private static final Pattern UNICODE_QUOTED_IDENTIFIER = Pattern.compile(
+        "(?i)(?<![\\p{L}\\p{N}_$])U&\""
     );
 
     private final Set<String> protectedTables;
@@ -57,402 +70,353 @@ class ConservativeMetricSqlInspector {
     }
 
     MetricSqlInspection inspect(String sql) {
-        Tokenization tokenization = tokenize(sql == null ? "" : sql);
-        List<Token> tokens = tokenization.tokens();
-        if (!tokenization.valid() || hasUnsafeExecutableComment(tokens)) {
-            return MetricSqlInspection.uninspectable();
-        }
-        List<TableRef> relations = tableReferences(tokens);
-        if (!referencesProtectedTable(tokens, relations)) {
+        if (protectedTables.isEmpty()) {
             return MetricSqlInspection.notProtected();
         }
-        if (hasDoubleQuotedConstruct(tokens) || !hasSingleQueryBlock(tokens) || hasUnsafeSemicolon(tokens)
-            || containsAnyKeyword(tokens, UNSUPPORTED_KEYWORDS)) {
+
+        try {
+            return inspectEnabled(sql);
+        } catch (RuntimeException ignored) {
+            return MetricSqlInspection.uninspectable();
+        }
+    }
+
+    private MetricSqlInspection inspectEnabled(String sql) {
+        String candidateSql = sql == null ? "" : sql;
+        if (hasUnsupportedLexicalForm(candidateSql)) {
             return MetricSqlInspection.uninspectable();
         }
 
+        SQLSelectStatement statement = parseSupportedStatement(candidateSql);
+        if (statement == null) {
+            return MetricSqlInspection.uninspectable();
+        }
+        boolean hasDoubleQuotedIdentifier = containsDoubleQuotedIdentifier(statement);
+        if (hasDoubleQuotedIdentifier && UNICODE_QUOTED_IDENTIFIER.matcher(candidateSql).find()) {
+            return MetricSqlInspection.uninspectable();
+        }
+        SQLSelect select = statement.getSelect();
+        if (select.getWithSubQuery() != null || !(select.getQuery() instanceof SQLSelectQueryBlock queryBlock)
+            || countQueryBlocks(statement) != 1) {
+            return MetricSqlInspection.uninspectable();
+        }
+
+        List<TableRef> relations = new ArrayList<>();
+        if (!collectRelations(queryBlock.getFrom(), relations)) {
+            return MetricSqlInspection.uninspectable();
+        }
         List<TableRef> protectedRelations = relations.stream().filter(this::isProtectedTable).toList();
-        if (protectedRelations.size() != 1) {
+        if (protectedRelations.isEmpty()) {
+            return MetricSqlInspection.notProtected();
+        }
+        if (hasDoubleQuotedIdentifier
+            || protectedRelations.size() != 1 || queryBlock.getWhere() == null) {
             return MetricSqlInspection.uninspectable();
         }
 
-        List<Token> predicates = wherePredicates(tokens);
-        if (predicates.isEmpty() || hasTopLevelDisjunction(predicates)) {
-            return MetricSqlInspection.uninspectable();
-        }
-        TableRef protectedRelation = protectedRelations.getFirst();
-        PredicateEvidence evidence = predicateEvidence(predicates, protectedRelation, relations);
+        PredicateEvidence evidence = predicateEvidence(
+            queryBlock.getWhere(),
+            protectedRelations.getFirst(),
+            relations
+        );
         if (!evidence.valid()) {
             return MetricSqlInspection.uninspectable();
         }
         if (!evidence.tupleScopes().isEmpty()) {
             return MetricSqlInspection.inspectable(evidence.tupleScopes());
         }
-        if (evidence.metricValues() != null && evidence.sceneValues() != null) {
-            return MetricSqlInspection.inspectable(cartesianScopes(
-                evidence.metricValues(), evidence.sceneValues()
-            ));
+        if (evidence.metricValues() == null || evidence.sceneValues() == null) {
+            return MetricSqlInspection.uninspectable();
         }
-        return MetricSqlInspection.uninspectable();
+        return MetricSqlInspection.inspectable(cartesianScopes(evidence.metricValues(), evidence.sceneValues()));
     }
 
-    private boolean referencesProtectedTable(List<Token> tokens, List<TableRef> relations) {
-        if (relations.stream().anyMatch(this::isProtectedTable)) {
+    private SQLSelectStatement parseSupportedStatement(String sql) {
+        List<SQLStatement> statements = SQLUtils.parseStatements(sql == null ? "" : sql, druidDialect());
+        if (statements.size() != 1 || !(statements.getFirst() instanceof SQLSelectStatement selectStatement)) {
+            return null;
+        }
+        return selectStatement;
+    }
+
+    private boolean hasUnsupportedLexicalForm(String sql) {
+        if (sql.indexOf('\\') >= 0) {
             return true;
         }
-        for (int i = 0; i < tokens.size(); i++) {
-            ParsedColumn identifier = parseColumn(tokens, i);
-            if (identifier != null && isProtectedName(identifier.reference().qualifiedName())) {
+        Lexer lexer = SQLParserUtils.createLexer(sql, druidDialect());
+        lexer.setKeepComments(true);
+        lexer.nextToken();
+        while (lexer.token() != Token.EOF) {
+            if (lexer.token() == Token.EQEQ || lexer.token() == Token.BARBAR) {
                 return true;
             }
+            lexer.nextToken();
+        }
+        List<String> comments = lexer.getComments();
+        return comments != null && comments.stream()
+            .anyMatch(ConservativeMetricSqlInspector::isUnsafeComment);
+    }
+
+    private static boolean isUnsafeComment(String comment) {
+        String normalized = comment.stripLeading();
+        return normalized.startsWith("/*!")
+            || (normalized.startsWith("--") && normalized.length() > 2
+                && !Character.isWhitespace(normalized.charAt(2)));
+    }
+
+    private DbType druidDialect() {
+        return switch (databaseType) {
+            case POSTGRESQL -> DbType.postgresql;
+            case MYSQL -> DbType.mysql;
+            case DORIS -> DbType.doris;
+            case DAMENG -> DbType.dm;
+        };
+    }
+
+    private static int countQueryBlocks(SQLSelectStatement statement) {
+        int[] count = {0};
+        statement.accept(new SQLASTVisitorAdapter() {
+            @Override
+            public boolean visit(SQLSelectQueryBlock queryBlock) {
+                count[0]++;
+                return true;
+            }
+        });
+        return count[0];
+    }
+
+    private static boolean containsDoubleQuotedIdentifier(SQLSelectStatement statement) {
+        boolean[] found = {false};
+        statement.accept(new SQLASTVisitorAdapter() {
+            @Override
+            public boolean visit(SQLIdentifierExpr identifier) {
+                found[0] |= isDoubleQuoted(identifier.getName());
+                return !found[0];
+            }
+
+            @Override
+            public boolean visit(SQLPropertyExpr property) {
+                found[0] |= isDoubleQuoted(property.getName()) || isDoubleQuoted(property.getOwnerName());
+                return !found[0];
+            }
+        });
+        return found[0];
+    }
+
+    private static boolean isDoubleQuoted(String value) {
+        return value != null && value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"");
+    }
+
+    private static boolean collectRelations(SQLTableSource source, List<TableRef> relations) {
+        if (source == null) {
+            return true;
+        }
+        if (source instanceof SQLJoinTableSource join) {
+            return collectRelations(join.getLeft(), relations) && collectRelations(join.getRight(), relations);
+        }
+        if (!(source instanceof SQLExprTableSource table) || !isPlainTableName(table.getExpr())) {
+            return false;
+        }
+        relations.add(new TableRef(normalize(table.getExpr().toString()), normalizeNullable(table.getAlias())));
+        return true;
+    }
+
+    private static boolean isPlainTableName(SQLExpr expression) {
+        if (expression instanceof SQLIdentifierExpr) {
+            return true;
+        }
+        if (expression instanceof SQLPropertyExpr property) {
+            return isPlainTableName(property.getOwner());
         }
         return false;
     }
 
-    private boolean isProtectedTable(TableRef tableRef) {
-        return isProtectedName(tableRef.name());
-    }
-
-    private boolean isProtectedName(String name) {
-        String normalized = normalize(name);
-        String terminal = terminalName(normalized);
-        return protectedTables.stream().anyMatch(configuredTable ->
-            configuredTable.equals(normalized) || terminalName(configuredTable).equals(terminal)
+    private boolean isProtectedTable(TableRef relation) {
+        return protectedTables.stream().anyMatch(tableName ->
+            tableName.equals(relation.name())
+                || terminalName(tableName).equals(relation.terminalName())
         );
     }
 
-    private static boolean hasSingleQueryBlock(List<Token> tokens) {
-        return tokens.stream().filter(token -> token.isKeyword("select")).count() == 1;
-    }
-
-    private static boolean hasUnsafeSemicolon(List<Token> tokens) {
-        for (int i = 0; i < tokens.size(); i++) {
-            if (";".equals(tokens.get(i).value()) && i != tokens.size() - 1) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static List<TableRef> tableReferences(List<Token> tokens) {
-        List<TableRef> relations = new ArrayList<>();
-        boolean inFromClause = false;
-        int depth = 0;
-        for (int i = 0; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if ("(".equals(token.value())) {
-                depth++;
-                continue;
-            }
-            if (")".equals(token.value())) {
-                depth = Math.max(0, depth - 1);
-                continue;
-            }
-            if (depth != 0) {
-                continue;
-            }
-            if (token.isKeyword("from")) {
-                inFromClause = true;
-                i = addTableReference(tokens, i + 1, relations, i);
-            } else if (token.isKeyword("join")) {
-                i = addTableReference(tokens, i + 1, relations, i);
-            } else if (inFromClause && ",".equals(token.value())) {
-                i = addTableReference(tokens, i + 1, relations, i);
-            } else if (inFromClause && token.isAnyKeyword(WHERE_BOUNDARIES)) {
-                inFromClause = false;
-            } else if (token.isKeyword("where")) {
-                inFromClause = false;
-            }
-        }
-        return relations;
-    }
-
-    private static int addTableReference(List<Token> tokens, int start, List<TableRef> relations, int fallbackIndex) {
-        ParsedTable parsed = parseTable(tokens, start);
-        if (parsed == null) {
-            return fallbackIndex;
-        }
-        relations.add(parsed.table());
-        return parsed.nextIndex() - 1;
-    }
-
-    private static ParsedTable parseTable(List<Token> tokens, int start) {
-        if (start >= tokens.size() || !tokens.get(start).identifier()) {
-            return null;
-        }
-        int index = start;
-        StringBuilder name = new StringBuilder(tokens.get(index).normalized());
-        index++;
-        while (index + 1 < tokens.size() && ".".equals(tokens.get(index).value()) && tokens.get(index + 1).identifier()) {
-            name.append('.').append(tokens.get(index + 1).normalized());
-            index += 2;
-        }
-
-        String alias = null;
-        if (index < tokens.size() && tokens.get(index).isKeyword("as")) {
-            index++;
-            if (index < tokens.size() && tokens.get(index).identifier()) {
-                alias = tokens.get(index).normalized();
-                index++;
-            }
-        } else if (index < tokens.size() && tokens.get(index).identifier()
-            && !tokens.get(index).isAnyKeyword(RELATION_KEYWORDS)) {
-            alias = tokens.get(index).normalized();
-            index++;
-        }
-        return new ParsedTable(new TableRef(name.toString(), alias), index);
-    }
-
-    private static List<Token> wherePredicates(List<Token> tokens) {
-        int depth = 0;
-        int start = -1;
-        int end = tokens.size();
-        for (int i = 0; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if ("(".equals(token.value())) {
-                depth++;
-            } else if (")".equals(token.value())) {
-                depth = Math.max(0, depth - 1);
-            } else if (depth == 0 && token.isKeyword("where")) {
-                start = i + 1;
-            } else if (depth == 0 && start >= 0 && token.isAnyKeyword(WHERE_BOUNDARIES)) {
-                end = i;
-                break;
-            }
-        }
-        return start < 0 || start >= end ? List.of() : tokens.subList(start, end);
-    }
-
-    private PredicateEvidence predicateEvidence(List<Token> predicates, TableRef protectedRelation, List<TableRef> relations) {
+    private PredicateEvidence predicateEvidence(
+        SQLExpr where,
+        TableRef protectedRelation,
+        List<TableRef> relations
+    ) {
         Set<String> metricValues = null;
         Set<String> sceneValues = null;
         Set<MetricScope> tupleScopes = Set.of();
-        for (List<Token> rawTerm : conjunctionTerms(predicates)) {
-            List<Token> term = stripOuterParentheses(rawTerm);
+        for (SQLExpr term : conjunctionTerms(where)) {
             ScopeTerm scopeTerm = parseScopeTerm(term, protectedRelation, relations);
-            if (scopeTerm == null) {
-                Set<MetricScope> parsedTuples = parseTupleTerm(term, protectedRelation, relations);
-                if (!parsedTuples.isEmpty()) {
-                    if (!tupleScopes.isEmpty() || metricValues != null || sceneValues != null) {
+            if (scopeTerm != null) {
+                if (!tupleScopes.isEmpty()) {
+                    return PredicateEvidence.invalid();
+                }
+                if (scopeTerm.dimension() == ScopeDimension.METRIC) {
+                    if (metricValues != null) {
                         return PredicateEvidence.invalid();
                     }
-                    tupleScopes = parsedTuples;
-                } else if (referencesScopeColumn(term)) {
-                    return PredicateEvidence.invalid();
+                    metricValues = scopeTerm.values();
+                } else {
+                    if (sceneValues != null) {
+                        return PredicateEvidence.invalid();
+                    }
+                    sceneValues = scopeTerm.values();
                 }
                 continue;
             }
-            if (!tupleScopes.isEmpty()) {
+
+            Set<MetricScope> parsedTuples = parseTupleTerm(term, protectedRelation, relations);
+            if (!parsedTuples.isEmpty()) {
+                if (!tupleScopes.isEmpty() || metricValues != null || sceneValues != null) {
+                    return PredicateEvidence.invalid();
+                }
+                tupleScopes = parsedTuples;
+            } else if (referencesScopeColumn(term)) {
                 return PredicateEvidence.invalid();
-            }
-            if (scopeTerm.metric()) {
-                if (metricValues != null) {
-                    return PredicateEvidence.invalid();
-                }
-                metricValues = scopeTerm.values();
-            } else {
-                if (sceneValues != null) {
-                    return PredicateEvidence.invalid();
-                }
-                sceneValues = scopeTerm.values();
             }
         }
         return new PredicateEvidence(true, tupleScopes, metricValues, sceneValues);
     }
 
-    private ScopeTerm parseScopeTerm(List<Token> term, TableRef protectedRelation, List<TableRef> relations) {
-        ParsedColumn column = parseColumn(term, 0);
-        if (column == null || column.nextIndex() >= term.size()
-            || !belongsToProtectedRelation(column.reference(), protectedRelation, relations)) {
-            return null;
+    private static List<SQLExpr> conjunctionTerms(SQLExpr expression) {
+        List<SQLExpr> terms = new ArrayList<>();
+        collectConjunctionTerms(expression, terms);
+        return terms;
+    }
+
+    private static void collectConjunctionTerms(SQLExpr expression, List<SQLExpr> terms) {
+        if (expression instanceof SQLBinaryOpExpr binary && binary.getOperator() == SQLBinaryOperator.BooleanAnd) {
+            collectConjunctionTerms(binary.getLeft(), terms);
+            collectConjunctionTerms(binary.getRight(), terms);
+        } else {
+            terms.add(expression);
         }
-        int operatorIndex = column.nextIndex();
-        Set<String> values;
-        if ("=".equals(term.get(operatorIndex).value())) {
-            if (operatorIndex + 2 != term.size() || !term.get(operatorIndex + 1).string()
-                || !isUsableScopeValue(term.get(operatorIndex + 1).value())) {
-                return null;
-            }
-            values = Set.of(term.get(operatorIndex + 1).value());
-        } else if (term.get(operatorIndex).isKeyword("in")) {
-            values = parseStringList(term, operatorIndex + 1);
-            if (values == null) {
-                return null;
-            }
+    }
+
+    private ScopeTerm parseScopeTerm(
+        SQLExpr expression,
+        TableRef protectedRelation,
+        List<TableRef> relations
+    ) {
+        SQLExpr columnExpression;
+        List<SQLExpr> valueExpressions;
+        if (expression instanceof SQLBinaryOpExpr binary && binary.getOperator() == SQLBinaryOperator.Equality) {
+            columnExpression = binary.getLeft();
+            valueExpressions = List.of(binary.getRight());
+        } else if (expression instanceof SQLInListExpr in && !in.isNot()) {
+            columnExpression = in.getExpr();
+            valueExpressions = in.getTargetList();
         } else {
             return null;
         }
-        String columnName = column.reference().name();
-        if (metricColumns.contains(columnName)) {
-            return new ScopeTerm(true, values);
-        }
-        if (sceneColumns.contains(columnName)) {
-            return new ScopeTerm(false, values);
-        }
-        return null;
-    }
 
-    private Set<String> parseStringList(List<Token> term, int startIndex) {
-        if (startIndex >= term.size() || !"(".equals(term.get(startIndex).value())) {
+        ColumnRef column = columnRef(columnExpression);
+        if (column == null || !belongsToProtectedRelation(column, protectedRelation, relations)) {
             return null;
         }
-        Set<String> values = new LinkedHashSet<>();
-        int index = startIndex + 1;
-        while (index < term.size()) {
-            if (!term.get(index).string() || !isUsableScopeValue(term.get(index).value())) {
-                return null;
-            }
-            values.add(term.get(index).value());
-            index++;
-            if (index >= term.size()) {
-                return null;
-            }
-            if (")".equals(term.get(index).value())) {
-                return index == term.size() - 1 ? Set.copyOf(values) : null;
-            }
-            if (!",".equals(term.get(index).value())) {
-                return null;
-            }
-            index++;
+        Set<String> values = stringValues(valueExpressions);
+        if (values == null) {
+            return null;
+        }
+        if (metricColumns.contains(column.name())) {
+            return new ScopeTerm(ScopeDimension.METRIC, values);
+        }
+        if (sceneColumns.contains(column.name())) {
+            return new ScopeTerm(ScopeDimension.SCENE, values);
         }
         return null;
     }
 
-    private static boolean isUsableScopeValue(String value) {
-        return value != null && !value.isBlank() && !"null".equalsIgnoreCase(value.trim());
-    }
+    private Set<MetricScope> parseTupleTerm(
+        SQLExpr expression,
+        TableRef protectedRelation,
+        List<TableRef> relations
+    ) {
+        if (!(expression instanceof SQLInListExpr in) || in.isNot()
+            || !(in.getExpr() instanceof SQLListExpr columns) || columns.getItems().size() != 2) {
+            return Set.of();
+        }
+        ColumnRef metric = columnRef(columns.getItems().get(0));
+        ColumnRef scene = columnRef(columns.getItems().get(1));
+        if (metric == null || scene == null
+            || !metricColumns.contains(metric.name()) || !sceneColumns.contains(scene.name())
+            || !belongsToProtectedRelation(metric, protectedRelation, relations)
+            || !belongsToProtectedRelation(scene, protectedRelation, relations)) {
+            return Set.of();
+        }
 
-    private Set<MetricScope> cartesianScopes(Set<String> metricValues, Set<String> sceneValues) {
         Set<MetricScope> scopes = new LinkedHashSet<>();
-        for (String metricValue : metricValues) {
-            for (String sceneValue : sceneValues) {
-                scopes.add(new MetricScope(metricValue, sceneValue));
+        for (SQLExpr target : in.getTargetList()) {
+            if (!(target instanceof SQLListExpr tuple) || tuple.getItems().size() != 2) {
+                return Set.of();
             }
+            Set<String> values = stringValues(tuple.getItems());
+            if (values == null) {
+                return Set.of();
+            }
+            SQLCharExpr metricValue = (SQLCharExpr) tuple.getItems().get(0);
+            SQLCharExpr sceneValue = (SQLCharExpr) tuple.getItems().get(1);
+            scopes.add(new MetricScope(metricValue.getText(), sceneValue.getText()));
         }
         return Set.copyOf(scopes);
     }
 
-    private Set<MetricScope> parseTupleTerm(List<Token> term, TableRef protectedRelation, List<TableRef> relations) {
-        if (term.isEmpty() || !"(".equals(term.getFirst().value())) {
-            return Set.of();
-        }
-        ParsedColumn metric = parseColumn(term, 1);
-        if (metric == null || !metricColumns.contains(metric.reference().name())
-            || !belongsToProtectedRelation(metric.reference(), protectedRelation, relations)) {
-            return Set.of();
-        }
-        int index = metric.nextIndex();
-        if (index >= term.size() || !",".equals(term.get(index).value())) {
-            return Set.of();
-        }
-        ParsedColumn scene = parseColumn(term, index + 1);
-        if (scene == null || !sceneColumns.contains(scene.reference().name())
-            || !belongsToProtectedRelation(scene.reference(), protectedRelation, relations)) {
-            return Set.of();
-        }
-        index = scene.nextIndex();
-        if (index + 2 >= term.size() || !")".equals(term.get(index).value())
-            || !term.get(index + 1).isKeyword("in") || !"(".equals(term.get(index + 2).value())) {
-            return Set.of();
-        }
-        index += 3;
-        Set<MetricScope> scopes = new LinkedHashSet<>();
-        while (index < term.size()) {
-            if (")".equals(term.get(index).value())) {
-                return index == term.size() - 1 && !scopes.isEmpty() ? Set.copyOf(scopes) : Set.of();
+    private static Set<String> stringValues(List<SQLExpr> expressions) {
+        Set<String> values = new LinkedHashSet<>();
+        for (SQLExpr expression : expressions) {
+            if (!(expression instanceof SQLCharExpr literal) || !isUsableScopeValue(literal.getText())) {
+                return null;
             }
-            if (index + 4 >= term.size() || !"(".equals(term.get(index).value())
-                || !term.get(index + 1).string() || !",".equals(term.get(index + 2).value())
-                || !term.get(index + 3).string() || !")".equals(term.get(index + 4).value())
-                || !isUsableScopeValue(term.get(index + 1).value())
-                || !isUsableScopeValue(term.get(index + 3).value())) {
-                return Set.of();
-            }
-            scopes.add(new MetricScope(term.get(index + 1).value(), term.get(index + 3).value()));
-            index += 5;
-            if (index < term.size() && ",".equals(term.get(index).value())) {
-                index++;
-            }
+            values.add(literal.getText());
         }
-        return Set.of();
+        return values.isEmpty() ? null : Set.copyOf(values);
     }
 
-    private boolean referencesScopeColumn(List<Token> tokens) {
-        for (int i = 0; i < tokens.size(); i++) {
-            ParsedColumn column = parseColumn(tokens, i);
-            if (column != null && (metricColumns.contains(column.reference().name())
-                || sceneColumns.contains(column.reference().name()))) {
-                return true;
+    private boolean referencesScopeColumn(SQLExpr expression) {
+        boolean[] found = {false};
+        expression.accept(new SQLASTVisitorAdapter() {
+            @Override
+            public boolean visit(SQLIdentifierExpr identifier) {
+                found[0] |= isScopeColumn(identifier.getName());
+                return !found[0];
             }
-        }
-        return false;
-    }
 
-    private static boolean hasTopLevelDisjunction(List<Token> predicates) {
-        int depth = 0;
-        for (Token token : stripOuterParentheses(predicates)) {
-            if ("(".equals(token.value())) {
-                depth++;
-            } else if (")".equals(token.value())) {
-                depth = Math.max(0, depth - 1);
-            } else if (depth == 0 && (token.isKeyword("or") || token.isKeyword("xor")
-                || "||".equals(token.value()))) {
-                return true;
+            @Override
+            public boolean visit(SQLPropertyExpr property) {
+                found[0] |= isScopeColumn(property.getName());
+                return !found[0];
             }
-        }
-        return false;
+        });
+        return found[0];
     }
 
-    private static List<List<Token>> conjunctionTerms(List<Token> predicates) {
-        List<Token> normalized = stripOuterParentheses(predicates);
-        List<List<Token>> terms = new ArrayList<>();
-        int depth = 0;
-        int start = 0;
-        for (int i = 0; i < normalized.size(); i++) {
-            Token token = normalized.get(i);
-            if ("(".equals(token.value())) {
-                depth++;
-            } else if (")".equals(token.value())) {
-                depth = Math.max(0, depth - 1);
-            } else if (depth == 0 && token.isKeyword("and")) {
-                terms.add(normalized.subList(start, i));
-                start = i + 1;
-            }
-        }
-        terms.add(normalized.subList(start, normalized.size()));
-        return terms;
+    private boolean isScopeColumn(String name) {
+        String normalized = normalize(name);
+        return metricColumns.contains(normalized) || sceneColumns.contains(normalized);
     }
 
-    private static List<Token> stripOuterParentheses(List<Token> tokens) {
-        List<Token> current = tokens;
-        while (current.size() >= 2 && "(".equals(current.getFirst().value())
-            && matchingParenthesis(current, 0) == current.size() - 1) {
-            current = current.subList(1, current.size() - 1);
+    private static ColumnRef columnRef(SQLExpr expression) {
+        if (expression instanceof SQLIdentifierExpr identifier) {
+            return new ColumnRef(null, normalize(identifier.getName()));
         }
-        return current;
+        if (expression instanceof SQLPropertyExpr property) {
+            return new ColumnRef(normalize(property.getOwnerName()), normalize(property.getName()));
+        }
+        return null;
     }
 
-    private static int matchingParenthesis(List<Token> tokens, int start) {
-        int depth = 0;
-        for (int i = start; i < tokens.size(); i++) {
-            if ("(".equals(tokens.get(i).value())) {
-                depth++;
-            } else if (")".equals(tokens.get(i).value()) && --depth == 0) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static boolean belongsToProtectedRelation(ColumnRef column, TableRef protectedRelation,
-                                                       List<TableRef> relations) {
+    private static boolean belongsToProtectedRelation(
+        ColumnRef column,
+        TableRef protectedRelation,
+        List<TableRef> relations
+    ) {
         if (column.qualifier() == null) {
             return relations.size() == 1;
         }
-        String qualifier = column.qualifier();
         TableRef matchedRelation = null;
         for (TableRef relation : relations) {
-            if (!matchesVisibleQualifier(qualifier, relation)) {
+            if (!matchesVisibleQualifier(column.qualifier(), relation)) {
                 continue;
             }
             if (matchedRelation != null) {
@@ -471,32 +435,18 @@ class ConservativeMetricSqlInspector {
             || (!qualifier.contains(".") && qualifier.equals(relation.terminalName()));
     }
 
-    private static ParsedColumn parseColumn(List<Token> tokens, int start) {
-        if (start < 0 || start >= tokens.size() || !tokens.get(start).identifier()) {
-            return null;
+    private static boolean isUsableScopeValue(String value) {
+        return value != null && !value.isBlank() && !"null".equalsIgnoreCase(value.trim());
+    }
+
+    private static Set<MetricScope> cartesianScopes(Set<String> metricValues, Set<String> sceneValues) {
+        Set<MetricScope> scopes = new LinkedHashSet<>();
+        for (String metricValue : metricValues) {
+            for (String sceneValue : sceneValues) {
+                scopes.add(new MetricScope(metricValue, sceneValue));
+            }
         }
-        List<String> parts = new ArrayList<>();
-        parts.add(tokens.get(start).normalized());
-        int index = start + 1;
-        while (index + 1 < tokens.size() && ".".equals(tokens.get(index).value()) && tokens.get(index + 1).identifier()) {
-            parts.add(tokens.get(index + 1).normalized());
-            index += 2;
-        }
-        String name = parts.getLast();
-        String qualifier = parts.size() == 1 ? null : String.join(".", parts.subList(0, parts.size() - 1));
-        return new ParsedColumn(new ColumnRef(qualifier, name), index);
-    }
-
-    private static boolean containsAnyKeyword(List<Token> tokens, Set<String> keywords) {
-        return tokens.stream().anyMatch(token -> token.isAnyKeyword(keywords));
-    }
-
-    private static boolean hasUnsafeExecutableComment(List<Token> tokens) {
-        return tokens.stream().anyMatch(Token::unsafeExecutableComment);
-    }
-
-    private static boolean hasDoubleQuotedConstruct(List<Token> tokens) {
-        return tokens.stream().anyMatch(token -> token.quoteKind() == QuoteKind.DOUBLE);
+        return Set.copyOf(scopes);
     }
 
     private static Set<String> normalizeSet(Set<String> values) {
@@ -514,229 +464,13 @@ class ConservativeMetricSqlInspector {
         return value.replace("\"", "").replace("`", "").toLowerCase(Locale.ROOT).trim();
     }
 
+    private static String normalizeNullable(String value) {
+        return value == null || value.isBlank() ? null : normalize(value);
+    }
+
     private static String terminalName(String value) {
         int separator = value.lastIndexOf('.');
         return separator < 0 ? value : value.substring(separator + 1);
-    }
-
-    private static Tokenization tokenize(String sql) {
-        List<Token> tokens = new ArrayList<>();
-        boolean valid = true;
-        int i = 0;
-        while (i < sql.length()) {
-            char c = sql.charAt(i);
-            if (Character.isWhitespace(c)) {
-                i++;
-            } else if (isDamengQuotedLiteralOpener(sql, i)) {
-                valid = false;
-                tokens.add(new Token(sql.substring(i, i + 2), TokenType.OTHER));
-                i += 2;
-            } else if (isUnicodeEscapedQuotedIdentifierOpener(sql, i)) {
-                valid = false;
-                tokens.add(new Token("U&\"", TokenType.OTHER));
-                i += 3;
-            } else if (isDollarQuoteOpener(sql, i)) {
-                valid = false;
-                tokens.add(new Token(String.valueOf(c), TokenType.OTHER));
-                i++;
-            } else if (c == '-' && i + 1 < sql.length() && sql.charAt(i + 1) == '-') {
-                int commentStart = i + 2;
-                if (commentStart == sql.length()
-                    || Character.isWhitespace(sql.charAt(commentStart))
-                    || Character.isISOControl(sql.charAt(commentStart))) {
-                    i = commentStart;
-                    while (i < sql.length() && sql.charAt(i) != '\n') {
-                        i++;
-                    }
-                } else {
-                    valid = false;
-                    tokens.add(new Token("--", TokenType.OPERATOR));
-                    i = commentStart;
-                }
-            } else if (c == '/' && i + 1 < sql.length() && sql.charAt(i + 1) == '*') {
-                if (i + 2 < sql.length() && sql.charAt(i + 2) == '!') {
-                    tokens.add(new Token("/*!", TokenType.UNSAFE_EXECUTABLE_COMMENT));
-                }
-                i += 2;
-                while (i + 1 < sql.length() && !(sql.charAt(i) == '*' && sql.charAt(i + 1) == '/')) {
-                    i++;
-                }
-                if (i + 1 < sql.length()) {
-                    i += 2;
-                } else {
-                    valid = false;
-                    i = sql.length();
-                }
-            } else if (c == '\'') {
-                StringBuilder value = new StringBuilder();
-                boolean closed = false;
-                i++;
-                while (i < sql.length()) {
-                    char ch = sql.charAt(i);
-                    if (ch == '\\') {
-                        valid = false;
-                        value.append(ch);
-                        i++;
-                    } else if (ch == '\'' && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
-                        value.append('\'');
-                        i += 2;
-                    } else if (ch == '\'') {
-                        i++;
-                        closed = true;
-                        break;
-                    } else {
-                        value.append(ch);
-                        i++;
-                    }
-                }
-                valid &= closed;
-                tokens.add(new Token(value.toString(), TokenType.STRING));
-            } else if (isIdentifierStart(c) || c == '"' || c == '`') {
-                QuoteKind quoteKind = c == '"' ? QuoteKind.DOUBLE
-                    : c == '`' ? QuoteKind.BACKTICK : QuoteKind.NONE;
-                StringBuilder value = new StringBuilder();
-                if (quoteKind != QuoteKind.NONE) {
-                    boolean closed = false;
-                    i++;
-                    while (i < sql.length() && sql.charAt(i) != c) {
-                        char quotedChar = sql.charAt(i++);
-                        if (quoteKind == QuoteKind.DOUBLE && quotedChar == '\\') {
-                            valid = false;
-                        }
-                        value.append(quotedChar);
-                    }
-                    if (i < sql.length()) {
-                        i++;
-                        closed = true;
-                    }
-                    valid &= closed;
-                } else {
-                    while (i < sql.length() && isIdentifierPart(sql.charAt(i))) {
-                        value.append(sql.charAt(i++));
-                    }
-                }
-                tokens.add(new Token(value.toString(), TokenType.IDENTIFIER, quoteKind));
-            } else if (isOperatorChar(c)) {
-                StringBuilder operator = new StringBuilder();
-                while (i < sql.length() && isOperatorChar(sql.charAt(i))) {
-                    operator.append(sql.charAt(i++));
-                }
-                tokens.add(new Token(operator.toString(), TokenType.OPERATOR));
-            } else if ("(),.;".indexOf(c) >= 0) {
-                tokens.add(new Token(String.valueOf(c), TokenType.PUNCTUATION));
-                i++;
-            } else {
-                tokens.add(new Token(String.valueOf(c), TokenType.OTHER));
-                i++;
-            }
-        }
-        return new Tokenization(List.copyOf(tokens), valid);
-    }
-
-    private static boolean isDamengQuotedLiteralOpener(String sql, int start) {
-        return start + 1 < sql.length()
-            && (sql.charAt(start) == 'Q' || sql.charAt(start) == 'q')
-            && sql.charAt(start + 1) == '\''
-            && (start == 0 || !isIdentifierContinuation(sql.codePointBefore(start)));
-    }
-
-    private static boolean isUnicodeEscapedQuotedIdentifierOpener(String sql, int start) {
-        return start + 2 < sql.length()
-            && (sql.charAt(start) == 'U' || sql.charAt(start) == 'u')
-            && sql.charAt(start + 1) == '&'
-            && sql.charAt(start + 2) == '"'
-            && (start == 0 || !isIdentifierContinuation(sql.codePointBefore(start)));
-    }
-
-    private static boolean isDollarQuoteOpener(String sql, int start) {
-        if (sql.charAt(start) != '$'
-            || (start > 0 && isIdentifierContinuation(sql.codePointBefore(start)))
-            || start + 1 >= sql.length()) {
-            return false;
-        }
-        if (sql.charAt(start + 1) == '$') {
-            return true;
-        }
-
-        int index = start + 1;
-        int codePoint = sql.codePointAt(index);
-        if (codePoint != '_' && !Character.isUnicodeIdentifierStart(codePoint)) {
-            return false;
-        }
-        index += Character.charCount(codePoint);
-        while (index < sql.length() && sql.charAt(index) != '$') {
-            codePoint = sql.codePointAt(index);
-            if (codePoint != '_' && !Character.isUnicodeIdentifierPart(codePoint)) {
-                return false;
-            }
-            index += Character.charCount(codePoint);
-        }
-        return index < sql.length();
-    }
-
-    private static boolean isIdentifierContinuation(int codePoint) {
-        return codePoint == '_' || Character.isUnicodeIdentifierPart(codePoint);
-    }
-
-    private static boolean isIdentifierStart(char c) {
-        return Character.isLetter(c) || c == '_';
-    }
-
-    private static boolean isIdentifierPart(char c) {
-        return Character.isLetterOrDigit(c) || c == '_' || c == '$';
-    }
-
-    private static boolean isOperatorChar(char c) {
-        return "=<>!~^|&+-*/%".indexOf(c) >= 0;
-    }
-
-    private enum TokenType {
-        IDENTIFIER,
-        STRING,
-        OPERATOR,
-        PUNCTUATION,
-        OTHER,
-        UNSAFE_EXECUTABLE_COMMENT
-    }
-
-    private enum QuoteKind {
-        NONE,
-        BACKTICK,
-        DOUBLE
-    }
-
-    private record Tokenization(List<Token> tokens, boolean valid) {
-    }
-
-    private record Token(String value, TokenType type, QuoteKind quoteKind) {
-
-        private Token(String value, TokenType type) {
-            this(value, type, QuoteKind.NONE);
-        }
-
-        boolean identifier() {
-            return type == TokenType.IDENTIFIER;
-        }
-
-        boolean string() {
-            return type == TokenType.STRING;
-        }
-
-        String normalized() {
-            return normalize(value);
-        }
-
-        boolean isKeyword(String keyword) {
-            return identifier() && quoteKind == QuoteKind.NONE && normalized().equals(keyword);
-        }
-
-        boolean isAnyKeyword(Set<String> keywords) {
-            return identifier() && quoteKind == QuoteKind.NONE && keywords.contains(normalized());
-        }
-
-        boolean unsafeExecutableComment() {
-            return type == TokenType.UNSAFE_EXECUTABLE_COMMENT;
-        }
     }
 
     private record TableRef(String name, String alias) {
@@ -745,22 +479,10 @@ class ConservativeMetricSqlInspector {
         }
     }
 
-    private record ParsedTable(TableRef table, int nextIndex) {
-    }
-
     private record ColumnRef(String qualifier, String name) {
-        String qualifiedName() {
-            return qualifier == null ? name : qualifier + "." + name;
-        }
     }
 
-    private record ParsedColumn(ColumnRef reference, int nextIndex) {
-    }
-
-    private record ScopeTerm(boolean metric, Set<String> values) {
-        private ScopeTerm {
-            values = Set.copyOf(values);
-        }
+    private record ScopeTerm(ScopeDimension dimension, Set<String> values) {
     }
 
     private record PredicateEvidence(
@@ -772,5 +494,10 @@ class ConservativeMetricSqlInspector {
         static PredicateEvidence invalid() {
             return new PredicateEvidence(false, Set.of(), null, null);
         }
+    }
+
+    private enum ScopeDimension {
+        METRIC,
+        SCENE
     }
 }
