@@ -36,6 +36,7 @@ import org.springframework.stereotype.Component;
 @Component
 class ConservativeMetricSqlInspector {
 
+    private static final int MAX_SQL_LENGTH = 64 * 1024;
     private static final Pattern UNICODE_QUOTED_IDENTIFIER = Pattern.compile(
         "(?i)(?<![\\p{L}\\p{N}_$])U&\""
     );
@@ -83,7 +84,8 @@ class ConservativeMetricSqlInspector {
 
     private MetricSqlInspection inspectEnabled(String sql) {
         String candidateSql = sql == null ? "" : sql;
-        if (hasUnsupportedLexicalForm(candidateSql)) {
+        if (candidateSql.isBlank() || candidateSql.length() > MAX_SQL_LENGTH
+            || hasUnsupportedLexicalForm(candidateSql)) {
             return MetricSqlInspection.uninspectable();
         }
 
@@ -143,6 +145,9 @@ class ConservativeMetricSqlInspector {
         if (sql.indexOf('\\') >= 0) {
             return true;
         }
+        if (sql.contains("/*!") && containsExecutableComment(sql)) {
+            return true;
+        }
         Lexer lexer = SQLParserUtils.createLexer(sql, druidDialect());
         lexer.setKeepComments(true);
         lexer.nextToken();
@@ -155,6 +160,19 @@ class ConservativeMetricSqlInspector {
         List<String> comments = lexer.getComments();
         return comments != null && comments.stream()
             .anyMatch(ConservativeMetricSqlInspector::isUnsafeComment);
+    }
+
+    private static boolean containsExecutableComment(String sql) {
+        Lexer lexer = new Lexer(sql);
+        lexer.setKeepComments(true);
+        lexer.nextToken();
+        while (lexer.token() != Token.EOF) {
+            lexer.nextToken();
+        }
+        List<String> comments = lexer.getComments();
+        return comments != null && comments.stream()
+            .map(String::stripLeading)
+            .anyMatch(comment -> comment.startsWith("/*!"));
     }
 
     private static boolean isUnsafeComment(String comment) {

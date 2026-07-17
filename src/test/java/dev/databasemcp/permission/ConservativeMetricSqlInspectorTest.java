@@ -2,14 +2,27 @@ package dev.databasemcp.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 
+import com.alibaba.druid.DbType;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.ast.statement.SQLSelectStatement;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.MockedStatic;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -58,6 +71,23 @@ class ConservativeMetricSqlInspectorTest {
             });
     }
 
+    @Test
+    void foldsVisitorFailureIntoStableUninspectableResult() {
+        SQLSelectStatement statement = mock(SQLSelectStatement.class);
+        doThrow(new IllegalStateException("visitor-sensitive-detail")).when(statement).accept(any());
+
+        MetricSqlInspection inspection;
+        try (MockedStatic<SQLUtils> druid = mockStatic(SQLUtils.class)) {
+            druid.when(() -> SQLUtils.parseStatements("select 1", DbType.postgresql))
+                .thenReturn(List.of(statement));
+            inspection = inspector.inspect("select 1");
+        }
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
+        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
     @Import(ConservativeMetricSqlInspector.class)
@@ -94,9 +124,10 @@ class ConservativeMetricSqlInspectorTest {
         assertThat(inspection.inspectable()).isFalse();
     }
 
-    @Test
-    void acceptsPublicSelectWithoutFromAfterDialectParsing() {
-        MetricSqlInspection inspection = inspector.inspect("select 1");
+    @ParameterizedTest
+    @EnumSource(DatabaseType.class)
+    void acceptsPublicSelectWithoutFromAfterDialectParsing(DatabaseType databaseType) {
+        MetricSqlInspection inspection = dialectInspector(databaseType).inspect("select 1");
 
         assertThat(inspection.protectedResource()).isFalse();
         assertThat(inspection.inspectable()).isTrue();
@@ -104,24 +135,247 @@ class ConservativeMetricSqlInspectorTest {
 
     @ParameterizedTest
     @EnumSource(DatabaseType.class)
-    void inspectsSupportedMetricQueryWithConfiguredDialect(DatabaseType databaseType) {
-        ConservativeMetricSqlInspector dialectInspector = new ConservativeMetricSqlInspector(
+    void enforces64KiBLimitBeforePublicFastPath(DatabaseType databaseType) {
+        String prefix = "select 1";
+        String atLimit = prefix + " ".repeat(64 * 1024 - prefix.length());
+        ConservativeMetricSqlInspector dialectInspector = dialectInspector(databaseType);
+
+        MetricSqlInspection accepted = dialectInspector.inspect(atLimit);
+        MetricSqlInspection rejected = dialectInspector.inspect(atLimit + " ");
+
+        assertThat(accepted.protectedResource()).isFalse();
+        assertThat(rejected.protectedResource()).isTrue();
+        assertThat(rejected.inspectable()).isFalse();
+    }
+
+    @ParameterizedTest(name = "{0}: {1}")
+    @MethodSource("supportedDialectQueries")
+    void inspectsSupportedMetricQueriesAcrossDialects(
+        DatabaseType databaseType,
+        String caseName,
+        String sql,
+        Set<MetricScope> expectedScopes
+    ) {
+        MetricSqlInspection inspection = dialectInspector(databaseType).inspect(sql);
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isTrue();
+        assertThat(inspection.metricScopes()).containsExactlyInAnyOrderElementsOf(expectedScopes);
+    }
+
+    private static Stream<Arguments> supportedDialectQueries() {
+        List<InspectableCase> cases = List.of(
+            new InspectableCase("full-name equality", """
+                select * from gkschema.gk_qta_data
+                where quota_id = 'A' and quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("terminal-name match", """
+                select * from analytics.gk_qta_data
+                where quota_id = 'A' and quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("alias", """
+                select metric.* from gkschema.gk_qta_data metric
+                where metric.quota_id = 'A' and metric.quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("join", """
+                select metric.*
+                from public.dimensions dimension
+                join gkschema.gk_qta_data metric on metric.dimension_id = dimension.id
+                where metric.quota_id = 'A' and metric.quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("comma join", """
+                select metric.*
+                from public.dimensions dimension, gkschema.gk_qta_data metric
+                where metric.dimension_id = dimension.id
+                  and metric.quota_id = 'A' and metric.quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("metric in", """
+                select * from gkschema.gk_qta_data
+                where quota_id in ('A', 'B') and quota_scene = 'default'
+                """, Set.of(
+                    new MetricScope("A", "default"),
+                    new MetricScope("B", "default")
+                )),
+            new InspectableCase("scene in", """
+                select * from gkschema.gk_qta_data
+                where quota_id = 'A' and quota_scene in ('default', 'custom')
+                """, Set.of(
+                    new MetricScope("A", "default"),
+                    new MetricScope("A", "custom")
+                )),
+            new InspectableCase("cartesian product", """
+                select * from gkschema.gk_qta_data
+                where quota_id in ('A', 'B') and quota_scene in ('default', 'custom')
+                """, Set.of(
+                    new MetricScope("A", "default"),
+                    new MetricScope("A", "custom"),
+                    new MetricScope("B", "default"),
+                    new MetricScope("B", "custom")
+                )),
+            new InspectableCase("tuple in", """
+                select * from gkschema.gk_qta_data
+                where (quota_id, quota_scene) in (('A', 'default'), ('B', 'custom'))
+                """, Set.of(
+                    new MetricScope("A", "default"),
+                    new MetricScope("B", "custom")
+                )),
+            new InspectableCase("additional filter", """
+                select * from gkschema.gk_qta_data
+                where quota_id = 'A' and quota_scene = 'default'
+                  and (status = 'ready' or status = 'running')
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("optimizer hint", """
+                select /*+ index(metric idx_qta) */ metric.*
+                from gkschema.gk_qta_data metric
+                where metric.quota_id = 'A' and metric.quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default"))),
+            new InspectableCase("ordinary comment", """
+                select metric.* from gkschema.gk_qta_data metric
+                /* ordinary comment */
+                where metric.quota_id = 'A' and metric.quota_scene = 'default'
+                """, Set.of(new MetricScope("A", "default")))
+        );
+        return Stream.of(DatabaseType.values())
+            .flatMap(databaseType -> cases.stream()
+                .map(testCase -> arguments(databaseType, testCase.name(), testCase.sql(), testCase.scopes())));
+    }
+
+    private static ConservativeMetricSqlInspector dialectInspector(DatabaseType databaseType) {
+        return new ConservativeMetricSqlInspector(
             databaseType,
             Set.of("gkschema.gk_qta_data"),
             Set.of("quota_id"),
             Set.of("quota_scene")
         );
+    }
 
-        MetricSqlInspection inspection = dialectInspector.inspect("""
-            select * from gkschema.gk_qta_data metric
-            where metric.quota_id in ('A', 'B') and metric.quota_scene = 'default'
-            """);
+    private record InspectableCase(String name, String sql, Set<MetricScope> scopes) {
+    }
 
-        assertThat(inspection.inspectable()).isTrue();
-        assertThat(inspection.metricScopes()).containsExactlyInAnyOrder(
-            new MetricScope("A", "default"),
-            new MetricScope("B", "default")
+    @ParameterizedTest(name = "{0}: {1}")
+    @MethodSource("unsupportedDialectQueries")
+    void rejectsUnsupportedMetricQueriesAcrossDialects(
+        DatabaseType databaseType,
+        String caseName,
+        String sql
+    ) {
+        MetricSqlInspection inspection = dialectInspector(databaseType).inspect(sql);
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
+        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
+    }
+
+    private static Stream<Arguments> unsupportedDialectQueries() {
+        List<UninspectableCase> sharedCases = List.of(
+            new UninspectableCase("empty", ""),
+            new UninspectableCase("multiple statements", "select 1; select 2"),
+            new UninspectableCase("non select", "update public.orders set status = 'done'"),
+            new UninspectableCase("malformed", "select 'unclosed"),
+            new UninspectableCase("unconsumed input", protectedQuery("quota_id = 'A' and quota_scene = 'default' }")),
+            new UninspectableCase("cte", """
+                with metric as (select * from gkschema.gk_qta_data)
+                select * from metric where quota_id = 'A' and quota_scene = 'default'
+                """),
+            new UninspectableCase("recursive cte", """
+                with recursive metric as (select * from gkschema.gk_qta_data)
+                select * from metric where quota_id = 'A' and quota_scene = 'default'
+                """),
+            new UninspectableCase("from subquery", """
+                select * from (select * from gkschema.gk_qta_data) metric
+                where quota_id = 'A' and quota_scene = 'default'
+                """),
+            new UninspectableCase("predicate subquery", protectedQuery("""
+                quota_id = 'A' and quota_scene = 'default'
+                and exists (select 1 from public.orders)
+                """)),
+            new UninspectableCase("union", protectedQuery("quota_id = 'A' and quota_scene = 'default'")
+                + " union select * from public.orders"),
+            new UninspectableCase("intersect", protectedQuery("quota_id = 'A' and quota_scene = 'default'")
+                + " intersect select * from public.orders"),
+            new UninspectableCase("except", protectedQuery("quota_id = 'A' and quota_scene = 'default'")
+                + " except select * from public.orders"),
+            new UninspectableCase("minus", protectedQuery("quota_id = 'A' and quota_scene = 'default'")
+                + " minus select * from public.orders"),
+            new UninspectableCase("multiple protected relations", """
+                select *
+                from gkschema.gk_qta_data left_metric
+                join gkschema.gk_qta_data right_metric on right_metric.id = left_metric.id
+                where left_metric.quota_id = 'A' and left_metric.quota_scene = 'default'
+                """),
+            new UninspectableCase("ambiguous scope relation", """
+                select *
+                from gkschema.gk_qta_data metric
+                join public.orders orders on orders.id = metric.order_id
+                where quota_id = 'A' and quota_scene = 'default'
+                """),
+            new UninspectableCase("missing scene", protectedQuery("quota_id = 'A'")),
+            new UninspectableCase("missing metric", protectedQuery("quota_scene = 'default'")),
+            new UninspectableCase("empty metric", protectedQuery(
+                "quota_id = '' and quota_scene = 'default'"
+            )),
+            new UninspectableCase("blank scene", protectedQuery(
+                "quota_id = 'A' and quota_scene = '  '"
+            )),
+            new UninspectableCase("placeholder", protectedQuery("quota_id = ? and quota_scene = 'default'")),
+            new UninspectableCase("null", protectedQuery("quota_id = null and quota_scene = 'default'")),
+            new UninspectableCase("number", protectedQuery("quota_id = 1 and quota_scene = 'default'")),
+            new UninspectableCase("column reference", protectedQuery(
+                "quota_id = fallback_quota_id and quota_scene = 'default'"
+            )),
+            new UninspectableCase("function", protectedQuery(
+                "quota_id = upper('A') and quota_scene = 'default'"
+            )),
+            new UninspectableCase("arithmetic", protectedQuery(
+                "quota_id = ('A' + '') and quota_scene = 'default'"
+            )),
+            new UninspectableCase("repeated dimension", protectedQuery(
+                "quota_id = 'A' and quota_id = 'B' and quota_scene = 'default'"
+            )),
+            new UninspectableCase("tuple scalar mix", protectedQuery("""
+                (quota_id, quota_scene) in (('A', 'default'))
+                and quota_id = 'A'
+                """)),
+            new UninspectableCase("non equality", protectedQuery(
+                "quota_id <> 'A' and quota_scene = 'default'"
+            )),
+            new UninspectableCase("scope or", protectedQuery(
+                "quota_id = 'A' or quota_scene = 'default'"
+            )),
+            new UninspectableCase("scope not", protectedQuery(
+                "not (quota_id = 'A') and quota_scene = 'default'"
+            )),
+            new UninspectableCase("top level escape", protectedQuery("""
+                quota_id = 'A' and quota_scene = 'default'
+                or status = 'ready'
+                """)),
+            new UninspectableCase("executable comment", protectedQuery("""
+                quota_id = 'A' and quota_scene = 'default'
+                /*! or 1 = 1 */
+                """)),
+            new UninspectableCase("unknown table source", "select * from (values (1)) value_table(id)")
         );
+        return Stream.of(DatabaseType.values())
+            .flatMap(databaseType -> Stream.concat(
+                sharedCases.stream().map(testCase -> arguments(databaseType, testCase.name(), testCase.sql())),
+                Stream.of(arguments(databaseType, "dialect mismatch", dialectMismatchSql(databaseType)))
+            ));
+    }
+
+    private static String protectedQuery(String predicate) {
+        return "select * from gkschema.gk_qta_data where " + predicate;
+    }
+
+    private static String dialectMismatchSql(DatabaseType databaseType) {
+        String predicate = " where quota_id = 'A' and quota_scene = 'default'";
+        return switch (databaseType) {
+            case POSTGRESQL -> "select * from gkschema.gk_qta_data" + predicate + " limit 0, 10";
+            case MYSQL, DORIS, DAMENG ->
+                "select distinct on (quota_id) * from gkschema.gk_qta_data" + predicate;
+        };
+    }
+
+    private record UninspectableCase(String name, String sql) {
     }
 
     @Test

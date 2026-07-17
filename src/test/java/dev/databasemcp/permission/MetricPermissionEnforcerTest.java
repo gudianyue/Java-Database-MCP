@@ -56,6 +56,23 @@ class MetricPermissionEnforcerTest {
     }
 
     @Test
+    void returnsStableUninspectableErrorWithoutCallingProviderOrLeakingSql() {
+        AtomicBoolean called = new AtomicBoolean(false);
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(inspector, userId -> {
+            called.set(true);
+            return PermissionScope.empty();
+        });
+
+        assertThatThrownBy(() -> enforcer.authorize("select 'sensitive-sql-marker", null))
+            .isInstanceOf(PermissionDeniedException.class)
+            .hasMessage("permission_sql_uninspectable")
+            .hasMessageNotContaining("sensitive-sql-marker")
+            .hasMessageNotContaining("druid")
+            .hasMessageNotContaining("syntax");
+        assertThat(called).isFalse();
+    }
+
+    @Test
     void rejectsProtectedSqlWhenUserIdIsMissing() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,
