@@ -85,7 +85,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -131,7 +130,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     private static Stream<Arguments> sideEffectingSelects() {
@@ -302,7 +300,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     private static Stream<Arguments> unsupportedDialectQueries() {
@@ -444,7 +441,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -456,7 +452,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -483,7 +478,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -495,7 +489,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -508,7 +501,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -521,7 +513,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -542,7 +533,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -554,7 +544,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -566,7 +555,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -599,7 +587,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -611,7 +598,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -624,7 +610,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -636,7 +621,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -650,7 +634,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -663,7 +646,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -928,7 +910,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -1176,7 +1157,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -1190,7 +1170,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test
@@ -1204,7 +1183,6 @@ class ConservativeMetricSqlInspectorTest {
 
         assertThat(inspection.protectedResource()).isTrue();
         assertThat(inspection.inspectable()).isFalse();
-        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
     }
 
     @Test

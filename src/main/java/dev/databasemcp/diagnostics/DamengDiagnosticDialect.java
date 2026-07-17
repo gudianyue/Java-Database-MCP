@@ -1,5 +1,7 @@
 package dev.databasemcp.diagnostics;
 
+import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+
 import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
@@ -8,8 +10,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -207,9 +209,9 @@ public class DamengDiagnosticDialect implements DiagnosticDialect {
         return renderRowsOrHealthy(result, "当前用户未看到禁用约束。");
     }
 
-    private String runCheck(String title, HealthCheck check) {
+    private String runCheck(String title, Supplier<String> check) {
         try {
-            return "## " + title + "\n" + check.run();
+            return "## " + title + "\n" + check.get();
         } catch (RuntimeException e) {
             return "## " + title + "\n" + degraded(title, e);
         }
@@ -220,17 +222,7 @@ public class DamengDiagnosticDialect implements DiagnosticDialect {
     }
 
     private static String renderRows(QueryResult result) {
-        if (result.rows().isEmpty()) {
-            return "[]";
-        }
-        StringBuilder builder = new StringBuilder();
-        for (Map<String, Object> row : result.rows()) {
-            if (builder.length() > 0) {
-                builder.append(System.lineSeparator());
-            }
-            builder.append(row);
-        }
-        return builder.toString();
+        return result.rows().isEmpty() ? "[]" : joinRows(result.rows(), Object::toString);
     }
 
     private static String degraded(String section, RuntimeException e) {
@@ -262,8 +254,4 @@ public class DamengDiagnosticDialect implements DiagnosticDialect {
         return new ArrayList<>(types);
     }
 
-    @FunctionalInterface
-    private interface HealthCheck {
-        String run();
-    }
 }

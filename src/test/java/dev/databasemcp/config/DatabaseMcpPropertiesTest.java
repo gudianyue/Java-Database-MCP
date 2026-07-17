@@ -18,25 +18,6 @@ class DatabaseMcpPropertiesTest {
     }
 
     @Test
-    void databaseUriTakesPrecedenceOverEnvironmentDatabaseUri() {
-        DatabaseMcpProperties properties = new TestDatabaseMcpProperties("jdbc:postgresql://env.example.com:5432/env");
-        properties.setDatabaseUri("jdbc:postgresql://db.example.com:5432/app");
-
-        assertThat(properties.getDatabaseUri()).isEqualTo("jdbc:postgresql://db.example.com:5432/app");
-        assertThat(properties.resolvedJdbcUrl()).isEqualTo("jdbc:postgresql://db.example.com:5432/app");
-    }
-
-    @Test
-    void environmentDatabaseUriTakesPrecedenceOverSplitConfiguration() {
-        DatabaseMcpProperties properties = new TestDatabaseMcpProperties("jdbc:postgresql://env.example.com:5432/env");
-        properties.setDatabaseHost("localhost");
-        properties.setDatabaseName("ignored");
-
-        assertThat(properties.getDatabaseUri()).isEqualTo("jdbc:postgresql://env.example.com:5432/env");
-        assertThat(properties.resolvedJdbcUrl()).isEqualTo("jdbc:postgresql://env.example.com:5432/env");
-    }
-
-    @Test
     void buildsPostgresqlJdbcUrlFromSplitConfiguration() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         properties.setDatabaseType(DatabaseType.POSTGRESQL);
@@ -122,17 +103,4 @@ class DatabaseMcpPropertiesTest {
         assertThat(metric.getSceneColumns()).isEmpty();
     }
 
-    private static class TestDatabaseMcpProperties extends DatabaseMcpProperties {
-
-        private final String databaseUriEnvironmentVariable;
-
-        private TestDatabaseMcpProperties(String databaseUriEnvironmentVariable) {
-            this.databaseUriEnvironmentVariable = databaseUriEnvironmentVariable;
-        }
-
-        @Override
-        protected String databaseUriEnvironmentVariable() {
-            return databaseUriEnvironmentVariable;
-        }
-    }
 }

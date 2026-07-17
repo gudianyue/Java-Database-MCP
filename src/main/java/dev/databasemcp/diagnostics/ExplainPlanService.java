@@ -1,5 +1,7 @@
 package dev.databasemcp.diagnostics;
 
+import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+
 import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.dialect.DatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
@@ -93,29 +95,13 @@ public class ExplainPlanService {
     }
 
     private static String renderPlan(QueryResult result) {
-        StringBuilder builder = new StringBuilder();
-        for (Map<String, Object> row : result.rows()) {
-            if (!row.isEmpty()) {
-                if (builder.length() > 0) {
-                    builder.append(System.lineSeparator());
-                }
-                builder.append(row.values().iterator().next());
-            }
-        }
-        return builder.length() == 0 ? "[]" : builder.toString();
+        List<Map<String, Object>> rows = result.rows().stream().filter(row -> !row.isEmpty()).toList();
+        return rows.isEmpty() ? "[]" : joinRows(rows, row -> String.valueOf(row.values().iterator().next()));
     }
 
     private static String renderRows(QueryResult result) {
-        StringBuilder builder = new StringBuilder();
-        for (Map<String, Object> row : result.rows()) {
-            if (!row.isEmpty()) {
-                if (builder.length() > 0) {
-                    builder.append(System.lineSeparator());
-                }
-                builder.append(row);
-            }
-        }
-        return builder.length() == 0 ? "[]" : builder.toString();
+        List<Map<String, Object>> rows = result.rows().stream().filter(row -> !row.isEmpty()).toList();
+        return rows.isEmpty() ? "[]" : joinRows(rows, Object::toString);
     }
 
     private static String toCreateIndexSql(Map<String, Object> index) {

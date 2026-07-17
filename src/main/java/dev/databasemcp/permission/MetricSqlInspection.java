@@ -37,10 +37,6 @@ record MetricSqlInspection(Status status, Set<MetricScope> metricScopes) {
         return status != Status.UNINSPECTABLE;
     }
 
-    PermissionErrorCode errorCode() {
-        return status == Status.UNINSPECTABLE ? PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE : null;
-    }
-
     enum Status {
         NOT_PROTECTED,
         INSPECTABLE,

@@ -1,19 +1,15 @@
 package dev.databasemcp.config;
 
-import java.util.Arrays;
-
 public enum DatabaseType {
-    POSTGRESQL("postgresql", 5432, "jdbc:postgresql://"),
-    MYSQL("mysql", 3306, "jdbc:mysql://"),
-    DORIS("doris", 9030, "jdbc:mysql://"),
-    DAMENG("dameng", 5236, "jdbc:dm://");
+    POSTGRESQL(5432, "jdbc:postgresql://"),
+    MYSQL(3306, "jdbc:mysql://"),
+    DORIS(9030, "jdbc:mysql://"),
+    DAMENG(5236, "jdbc:dm://");
 
-    private final String value;
     private final int defaultPort;
     private final String jdbcPrefix;
 
-    DatabaseType(String value, int defaultPort, String jdbcPrefix) {
-        this.value = value;
+    DatabaseType(int defaultPort, String jdbcPrefix) {
         this.defaultPort = defaultPort;
         this.jdbcPrefix = jdbcPrefix;
     }
@@ -26,13 +22,4 @@ public enum DatabaseType {
         return jdbcPrefix;
     }
 
-    public static DatabaseType from(String value) {
-        if (value == null || value.isBlank()) {
-            return POSTGRESQL;
-        }
-        return Arrays.stream(values())
-            .filter(databaseType -> databaseType.value.equalsIgnoreCase(value))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("不支持的数据库类型：" + value));
-    }
 }

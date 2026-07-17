@@ -2,7 +2,6 @@ package dev.databasemcp.config;
 
 import dev.databasemcp.sql.SqlAccessMode;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -22,14 +21,7 @@ public class DatabaseMcpProperties {
     private PermissionProperties permission = new PermissionProperties();
 
     public String getDatabaseUri() {
-        if (databaseUri == null || databaseUri.isBlank()) {
-            return databaseUriEnvironmentVariable();
-        }
         return databaseUri;
-    }
-
-    protected String databaseUriEnvironmentVariable() {
-        return System.getenv("DATABASE_URI");
     }
 
     public void setDatabaseUri(String databaseUri) {
@@ -130,7 +122,7 @@ public class DatabaseMcpProperties {
     }
 
     private static boolean hasText(String value) {
-        return Optional.ofNullable(value).map(String::isBlank).map(blank -> !blank).orElse(false);
+        return value != null && !value.isBlank();
     }
 
     public static class PermissionProperties {

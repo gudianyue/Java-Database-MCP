@@ -17,3 +17,9 @@ CLAUDE.md
 .claude
 .omc
 .codegraph
+.scratch
+.agents
+/docs/adr/
+/docs/diagrams/
+/docs/specs/
+/.scratch/remove-llm-entrypoints/

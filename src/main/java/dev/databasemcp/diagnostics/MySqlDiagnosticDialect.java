@@ -32,6 +32,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
@@ -827,9 +828,9 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
 
     // ==================== 通用辅助 ====================
 
-    private String runCheck(String title, HealthCheck check) {
+    private String runCheck(String title, Supplier<String> check) {
         try {
-            return title + "：" + System.lineSeparator() + check.run();
+            return title + "：" + System.lineSeparator() + check.get();
         } catch (Exception e) {
             return title + "：" + System.lineSeparator() + "检查失败：" + SecretMasker.mask(e.getMessage());
         }
@@ -846,11 +847,6 @@ public class MySqlDiagnosticDialect implements DiagnosticDialect {
             throw new IllegalArgumentException("非法标识符：" + value);
         }
         return "`" + value.replace("`", "``") + "`";
-    }
-
-    @FunctionalInterface
-    private interface HealthCheck {
-        String run();
     }
 
     private record WorkloadQuery(String sql, double weight) {}

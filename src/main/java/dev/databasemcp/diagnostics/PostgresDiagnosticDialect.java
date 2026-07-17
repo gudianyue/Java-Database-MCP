@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
@@ -843,9 +844,9 @@ public class PostgresDiagnosticDialect implements DiagnosticDialect {
 
     // ==================== 通用辅助 ====================
 
-    private String runCheck(String title, HealthCheck check) {
+    private String runCheck(String title, Supplier<String> check) {
         try {
-            return title + "：" + System.lineSeparator() + check.run();
+            return title + "：" + System.lineSeparator() + check.get();
         } catch (Exception e) {
             return title + "：" + System.lineSeparator() + "检查失败：" + SecretMasker.mask(e.getMessage());
         }
@@ -879,11 +880,6 @@ public class PostgresDiagnosticDialect implements DiagnosticDialect {
 
             Java 版本会用 HypoPG 创建会话级假设索引并比较 EXPLAIN 成本，不会真正创建物理索引。
             """.strip();
-    }
-
-    @FunctionalInterface
-    private interface HealthCheck {
-        String run();
     }
 
     private record WorkloadQuery(String sql, double weight) {}

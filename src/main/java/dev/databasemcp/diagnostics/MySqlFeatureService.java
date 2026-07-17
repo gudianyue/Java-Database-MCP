@@ -1,5 +1,9 @@
 package dev.databasemcp.diagnostics;
 
+import static dev.databasemcp.diagnostics.DiagnosticSupport.firstValue;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
+import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
+
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import org.springframework.stereotype.Service;
@@ -63,28 +67,4 @@ public class MySqlFeatureService {
             """.strip();
     }
 
-    private static Object firstValue(QueryResult result, String column) {
-        if (result.rows().isEmpty()) {
-            return null;
-        }
-        return result.rows().getFirst().get(column);
-    }
-
-    private static long singleLong(QueryResult result, String column) {
-        Object value = firstValue(result, column);
-        if (value == null) {
-            return 0L;
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return Long.parseLong(String.valueOf(value));
-    }
-
-    private static boolean truthy(Object value) {
-        return Boolean.TRUE.equals(value)
-            || "true".equalsIgnoreCase(String.valueOf(value))
-            || "1".equals(String.valueOf(value))
-            || (value instanceof Number number && number.longValue() == 1L);
-    }
 }
