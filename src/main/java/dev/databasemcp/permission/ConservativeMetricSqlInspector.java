@@ -17,6 +17,8 @@ import com.alibaba.druid.sql.ast.statement.SQLSelect;
 import com.alibaba.druid.sql.ast.statement.SQLSelectQueryBlock;
 import com.alibaba.druid.sql.ast.statement.SQLSelectStatement;
 import com.alibaba.druid.sql.ast.statement.SQLTableSource;
+import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlSelectQueryBlock;
+import com.alibaba.druid.sql.dialect.postgresql.ast.stmt.PGSelectQueryBlock;
 import com.alibaba.druid.sql.parser.Lexer;
 import com.alibaba.druid.sql.parser.SQLParserUtils;
 import com.alibaba.druid.sql.parser.Token;
@@ -99,7 +101,11 @@ class ConservativeMetricSqlInspector {
         }
         SQLSelect select = statement.getSelect();
         if (select.getWithSubQuery() != null || !(select.getQuery() instanceof SQLSelectQueryBlock queryBlock)
-            || countQueryBlocks(statement) != 1) {
+            || countQueryBlocks(statement) != 1 || queryBlock.getInto() != null
+            || queryBlock.isForUpdate() || queryBlock.isForShare()
+            || queryBlock instanceof PGSelectQueryBlock pg && pg.getForClause() != null
+            || queryBlock instanceof MySqlSelectQueryBlock mysql
+                && (mysql.isLockInShareMode() || mysql.getProcedureName() != null)) {
             return MetricSqlInspection.uninspectable();
         }
 

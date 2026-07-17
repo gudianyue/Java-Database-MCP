@@ -139,7 +139,7 @@ WHERE quota_id = 'A'
 - 缺少 `quota_id` 或 `quota_scene` 任一维，或者完全没有 `WHERE`。
 - tuple `IN` 与单列范围条件混用，或重复约束同一范围维度。
 - CTE、子查询、PostgreSQL `TABLE` query expression、`UNION`、`INTERSECT`、`EXCEPT`（以及 `MINUS`）；Inspector 不解释 `TABLE` 这种替代查询表达式，涉及受保护表时会保守拒绝。
-- PostgreSQL `ONLY` 关系修饰符，包括 `ONLY table`、`ONLY (table)` 以及可选尾随 `*`；Inspector 暂不解释这些关系语义，涉及受保护表时会保守拒绝，能可靠识别为仅引用公开表的 SQL 仍按 fast path 放行。
+- PostgreSQL `ONLY` 关系修饰符，包括 `ONLY table`、`ONLY (table)` 以及可选尾随 `*`；Inspector 暂不解释这些关系语义，因此在公开资源 fast path 之前统一拒绝。
 - 多个 SQL 语句，或用分号追加另一条语句。受保护 SQL 应只提供单条查询并省略末尾分号。
 - 同一 SQL 中出现多个受保护表关系；或范围列绑定到其他表、在多表关系中无法确认归属。
 - 受保护表上的非受支持语句（例如当前无法检查的 DML）或其他不在白名单内的结构。

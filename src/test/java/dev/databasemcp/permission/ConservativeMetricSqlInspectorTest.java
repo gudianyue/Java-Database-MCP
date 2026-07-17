@@ -125,6 +125,45 @@ class ConservativeMetricSqlInspectorTest {
     }
 
     @ParameterizedTest
+    @MethodSource("sideEffectingSelects")
+    void rejectsSideEffectingSelectModifiers(DatabaseType databaseType, String sql) {
+        MetricSqlInspection inspection = dialectInspector(databaseType).inspect(sql);
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isFalse();
+        assertThat(inspection.errorCode()).isEqualTo(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
+    }
+
+    private static Stream<Arguments> sideEffectingSelects() {
+        return Stream.of(
+            arguments(
+                DatabaseType.POSTGRESQL,
+                "select * into public.exported_orders from public.orders"
+            ),
+            arguments(
+                DatabaseType.POSTGRESQL,
+                protectedQuery("quota_id = 'A' and quota_scene = 'default'") + " for update"
+            ),
+            arguments(
+                DatabaseType.POSTGRESQL,
+                protectedQuery("quota_id = 'A' and quota_scene = 'default'") + " for share"
+            ),
+            arguments(
+                DatabaseType.MYSQL,
+                "select * from public.orders into outfile '/tmp/export.csv'"
+            ),
+            arguments(
+                DatabaseType.MYSQL,
+                protectedQuery("quota_id = 'A' and quota_scene = 'default'") + " lock in share mode"
+            ),
+            arguments(
+                DatabaseType.MYSQL,
+                protectedQuery("quota_id = 'A' and quota_scene = 'default'") + " procedure analyse()"
+            )
+        );
+    }
+
+    @ParameterizedTest
     @EnumSource(DatabaseType.class)
     void acceptsPublicSelectWithoutFromAfterDialectParsing(DatabaseType databaseType) {
         MetricSqlInspection inspection = dialectInspector(databaseType).inspect("select 1");
