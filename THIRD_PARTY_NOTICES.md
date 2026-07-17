@@ -36,3 +36,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Alibaba Druid
+
+本项目使用 Alibaba Druid core `1.2.28` 的 SQL parser、AST 和 visitor 能力，不使用其数据源、连接池或监控组件。
+
+- 上游项目：https://github.com/alibaba/druid
+- Maven 坐标：`com.alibaba:druid:1.2.28`
+- 许可证：Apache License 2.0
+- 许可证原文：https://github.com/alibaba/druid/blob/master/LICENSE
+
+Apache License 2.0 允许商业使用、复制、修改和再分发，不要求本项目采用相同许可证。发行包含 Druid 的产品时，必须随发行物提供 Apache License 2.0 许可证文本，保留适用的版权、专利、商标和归属声明；如修改 Druid 文件，还必须显著说明修改。该许可证不授予上游商标使用权，软件按“原样”提供且不含担保。

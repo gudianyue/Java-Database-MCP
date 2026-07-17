@@ -1,10 +1,12 @@
 package dev.databasemcp.permission;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -28,10 +30,12 @@ class ConservativeMetricSqlInspector {
     private final Set<String> protectedTables;
     private final Set<String> metricColumns;
     private final Set<String> sceneColumns;
+    private final DatabaseType databaseType;
 
     @Autowired
     ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
         this(
+            properties.getDatabaseType(),
             properties.getPermission().isEnabled() && properties.getPermission().getMetric().isEnabled()
                 ? properties.getPermission().getMetric().getProtectedTables()
                 : Set.of(),
@@ -40,7 +44,13 @@ class ConservativeMetricSqlInspector {
         );
     }
 
-    ConservativeMetricSqlInspector(Set<String> protectedTables, Set<String> metricColumns, Set<String> sceneColumns) {
+    ConservativeMetricSqlInspector(
+        DatabaseType databaseType,
+        Set<String> protectedTables,
+        Set<String> metricColumns,
+        Set<String> sceneColumns
+    ) {
+        this.databaseType = Objects.requireNonNull(databaseType, "databaseType");
         this.protectedTables = normalizeSet(protectedTables);
         this.metricColumns = normalizeSet(metricColumns);
         this.sceneColumns = normalizeSet(sceneColumns);

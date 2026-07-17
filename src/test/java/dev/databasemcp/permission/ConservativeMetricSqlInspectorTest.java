@@ -3,16 +3,65 @@ package dev.databasemcp.permission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.config.DatabaseType;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ConservativeMetricSqlInspectorTest {
 
     private final ConservativeMetricSqlInspector inspector = new ConservativeMetricSqlInspector(
+        DatabaseType.POSTGRESQL,
         Set.of("gkschema.gk_qta_data"),
         Set.of("quota_id"),
         Set.of("quota_scene")
     );
+
+    @ParameterizedTest
+    @CsvSource({
+        "postgresql, POSTGRESQL",
+        "mysql, MYSQL",
+        "doris, DORIS",
+        "dameng, DAMENG"
+    })
+    void assemblesConfiguredDatabaseTypeAtInspectorBoundary(
+        String configuredType,
+        DatabaseType expectedType
+    ) {
+        new ApplicationContextRunner()
+            .withUserConfiguration(InspectorTestConfiguration.class)
+            .withPropertyValues("database-mcp.database-type=" + configuredType)
+            .run(context -> assertThat(
+                ReflectionTestUtils.getField(
+                    context.getBean(ConservativeMetricSqlInspector.class),
+                    "databaseType"
+                )
+            ).isEqualTo(expectedType));
+    }
+
+    @Test
+    void rejectsUnsupportedDatabaseTypeDuringConfigurationBinding() {
+        new ApplicationContextRunner()
+            .withUserConfiguration(InspectorTestConfiguration.class)
+            .withPropertyValues("database-mcp.database-type=oracle")
+            .run(context -> {
+                assertThat(context).hasFailed();
+                assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalArgumentException.class);
+            });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(DatabaseMcpProperties.class)
+    @Import(ConservativeMetricSqlInspector.class)
+    static class InspectorTestConfiguration {
+    }
 
     @Test
     void rejectsInspectableResultWithoutMetricScopes() {
@@ -944,6 +993,7 @@ class ConservativeMetricSqlInspectorTest {
     @Test
     void matchesQualifiedAndUnqualifiedProtectedTableNamesConservatively() {
         ConservativeMetricSqlInspector unqualifiedInspector = new ConservativeMetricSqlInspector(
+            DatabaseType.POSTGRESQL,
             Set.of("gk_qta_data"),
             Set.of("quota_id"),
             Set.of("quota_scene")

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.databasemcp.config.DatabaseType;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 class MetricPermissionEnforcerTest {
 
     private final ConservativeMetricSqlInspector inspector = new ConservativeMetricSqlInspector(
+        DatabaseType.POSTGRESQL,
         Set.of("gkschema.gk_qta_data"),
         Set.of("quota_id"),
         Set.of("quota_scene")
