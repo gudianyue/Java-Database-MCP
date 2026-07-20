@@ -17,6 +17,23 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 class SqlAuthorizationEnforcerTest {
 
     @Test
+    void enabledAuthorizationRequiresAuthorizerWhenConstructedDirectly() {
+        assertThatThrownBy(() -> new SqlAuthorizationEnforcer(enabledProperties(), (SqlAuthorizer) null))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("exactly one SqlAuthorizer must be configured");
+    }
+
+    @Test
+    void disabledAuthorizationAllowsMissingAuthorizer() {
+        SqlAuthorizationEnforcer enforcer = new SqlAuthorizationEnforcer(
+            new DatabaseMcpProperties(),
+            (SqlAuthorizer) null
+        );
+
+        enforcer.authorize(null, null);
+    }
+
+    @Test
     void disabledAuthorizationBypassesInputValidationAndAuthorizer() {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
         AtomicBoolean called = new AtomicBoolean();

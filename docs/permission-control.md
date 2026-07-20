@@ -194,7 +194,38 @@ SqlAuthorizer sqlAuthorizer() {
 
 接口返回 `true` 或 `false`，不得返回改写后的 SQL。实现超时应抛 `SqlAuthorizationTimeoutException`，其他运行异常会统一按授权器不可用处理。权限开启时零个或多个 `SqlAuthorizer` 都会拒绝启动；权限关闭时不要求唯一性，也不调用授权器。
 
-### 6.2 受保护对象与范围列
+### 6.2 HTTP SQL 授权器
+
+非 Java 权限系统可以通过固定 HTTP 协议接入，无需实现项目 Java 接口：
+
+```yaml
+database-mcp:
+  permission:
+    enabled: true
+    http:
+      url: https://permission.example.com/sql/authorize
+      timeout: 3s
+      headers:
+        Authorization: "Bearer <部署密钥>"
+        X-Api-Key: "<部署密钥>"
+```
+
+配置 `http.url` 会自动贡献一个 `SqlAuthorizer` Bean，不需要也不支持授权器类型枚举。`timeout` 是单次请求总超时，默认 3 秒且必须大于零。`headers` 是仅由部署方提供的静态请求头；三个 MCP 工具没有对应参数，调用者不能提供或覆盖这些值。不要把真实密钥提交到版本库，应通过受控配置源或环境注入。
+
+适配器对每条 SQL 发送一次请求，不重试也不缓存：
+
+```http
+POST /sql/authorize
+Content-Type: application/json
+
+{"userId":"user-123","sql":"SELECT 1"}
+```
+
+请求 JSON 只包含原始字符串 `userId` 与 `sql`。远端只有返回 2xx 且正文只包含布尔 `allowed` 才形成有效决定：`{"allowed":true}` 放行，`{"allowed":false}` 是业务拒绝并映射为 `permission_denied`；额外字段也视为非法响应。HTTP 403 不是业务拒绝；它与其他非 2xx、空正文、缺失/错误类型字段、连接失败一同映射为 `permission_authorizer_unavailable`，总超时映射为 `permission_authorizer_timeout`。
+
+静态请求头与远端响应正文不会进入应用日志或外部异常消息。首版不提供 OAuth 刷新、动态令牌、请求签名、mTLS 编排、熔断或通用授权缓存；需要这些能力时应提供自定义 `SqlAuthorizer`。
+
+### 6.3 受保护对象与范围列
 
 核心配置示例：
 
@@ -210,7 +241,7 @@ database-mcp.permission.metric.scene-columns[0]=quota_scene
 
 受保护表按配置名称或末级表名做大小写归一化匹配。通过全局前置检查后，只有配置为受保护的表进入指标范围鉴权；能可靠识别为未列入的表时立即放行且不调用 Provider。
 
-### 6.3 内置 SQL Provider
+### 6.4 内置 SQL Provider
 
 Provider 接口为：
 
@@ -232,7 +263,7 @@ database-mcp.permission.metric.provider.timeout-seconds=10
 
 也可以自行实现 `MetricPermissionProvider` 对接 IAM 或权限中心。使用自定义实现时不要配置内置授权查询，并确保 Spring 容器中最终只有一个 Provider Bean。
 
-### 6.4 Redis 缓存
+### 6.5 Redis 缓存
 
 项目内置 `RedisMetricPermissionCache` 只由内置 `ConfiguredSqlMetricPermissionProvider` 消费，按 `user_id` 的 SHA-256 摘要作为键后缀，缓存该 Provider 返回的完整授权范围：
 

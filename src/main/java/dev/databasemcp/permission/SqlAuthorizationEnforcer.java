@@ -1,6 +1,7 @@
 package dev.databasemcp.permission;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,17 +13,21 @@ import org.springframework.stereotype.Component;
 public class SqlAuthorizationEnforcer {
 
     private static final Logger log = LoggerFactory.getLogger(SqlAuthorizationEnforcer.class);
+    private static final String CONFIGURATION_ERROR = "exactly one SqlAuthorizer must be configured";
 
     private final DatabaseMcpProperties properties;
     private final SqlAuthorizer authorizer;
 
     @Autowired
     SqlAuthorizationEnforcer(DatabaseMcpProperties properties, ObjectProvider<SqlAuthorizer> authorizers) {
-        this(properties, authorizers.getIfUnique());
+        this(properties, selectAuthorizer(properties, authorizers));
     }
 
     SqlAuthorizationEnforcer(DatabaseMcpProperties properties, SqlAuthorizer authorizer) {
         this.properties = properties;
+        if (properties.getPermission().isEnabled() && authorizer == null) {
+            throw new IllegalStateException(CONFIGURATION_ERROR);
+        }
         this.authorizer = authorizer;
     }
 
@@ -79,5 +84,19 @@ public class SqlAuthorizationEnforcer {
 
     private static long elapsedMillis(long startedAt) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+    }
+
+    private static SqlAuthorizer selectAuthorizer(
+        DatabaseMcpProperties properties,
+        ObjectProvider<SqlAuthorizer> authorizers
+    ) {
+        if (!properties.getPermission().isEnabled()) {
+            return null;
+        }
+        List<SqlAuthorizer> candidates = authorizers.stream().toList();
+        if (candidates.size() != 1) {
+            throw new IllegalStateException(CONFIGURATION_ERROR);
+        }
+        return candidates.getFirst();
     }
 }

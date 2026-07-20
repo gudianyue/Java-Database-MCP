@@ -2,6 +2,7 @@ package dev.databasemcp.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +73,9 @@ class DatabaseMcpPropertiesTest {
         DatabaseMcpProperties properties = new DatabaseMcpProperties();
 
         assertThat(properties.getPermission().isEnabled()).isFalse();
+        assertThat(properties.getPermission().getHttp().getUrl()).isNull();
+        assertThat(properties.getPermission().getHttp().getTimeout()).isEqualTo(Duration.ofSeconds(3));
+        assertThat(properties.getPermission().getHttp().getHeaders()).isEmpty();
         assertThat(properties.getPermission().getMetric().isEnabled()).isFalse();
         assertThat(properties.getPermission().getMetric().getProtectedTables()).isEmpty();
         assertThat(properties.getPermission().getMetric().getMetricColumns()).isEmpty();

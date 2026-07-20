@@ -55,6 +55,8 @@ SqlAuthorizer sqlAuthorizer() {
 
 自定义实现只作允许或拒绝决定，不修改 SQL，也不负责验证 `user_id` 的真实性。`database-mcp.permission.enabled=true` 时必须恰好存在一个 `SqlAuthorizer` Bean，否则应用拒绝启动。
 
+非 Java 权限系统可配置 `database-mcp.permission.http.url` 使用内置 HTTP 授权器。它以 POST JSON 原样发送 `userId` 与 SQL，接受 2xx 且正文只含布尔 `allowed` 的响应；静态认证请求头和默认 3 秒总超时由服务端配置提供，不重试、不缓存，也不会把请求头或远端响应正文写入日志。HTTP、指标和自定义授权器不能同时启用。
+
 现有“Druid AST + 指标范围 Provider”能力继续作为内置 `SqlAuthorizer` 使用：启用 `database-mcp.permission.metric.enabled` 后，从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围并与 Provider 返回的授权范围比较；未启用指标实现时，通用核心不解释任何指标语义。指标 SQL 无法检查或范围不足统一返回 `permission_denied`，Provider 超时与其他故障分别返回 `permission_authorizer_timeout`、`permission_authorizer_unavailable`；细分原因只进入服务端诊断日志。
 
 请求示例：

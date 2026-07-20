@@ -2,6 +2,7 @@ package dev.databasemcp.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -9,6 +10,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.web.reactive.function.client.WebClient;
 
 class MetricPermissionConfigurationValidatorTest {
 
@@ -88,7 +90,22 @@ class MetricPermissionConfigurationValidatorTest {
                 "database-mcp.permission.metric.scene-columns[0]=quota_scene"
             )
             .run(context -> assertThat(context.getStartupFailure())
-                .hasMessageContaining("exactly one SqlAuthorizer"));
+                .hasRootCauseMessage("exactly one SqlAuthorizer must be configured"));
+    }
+
+    @Test
+    void failsStartupWhenMetricAndHttpAuthorizersAreBothSelected() {
+        contextRunner
+            .withPropertyValues(
+                "database-mcp.permission.enabled=true",
+                "database-mcp.permission.http.url=http://127.0.0.1:8080/authorize",
+                "database-mcp.permission.metric.enabled=true",
+                "database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data",
+                "database-mcp.permission.metric.metric-columns[0]=quota_id",
+                "database-mcp.permission.metric.scene-columns[0]=quota_scene"
+            )
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasRootCauseMessage("exactly one SqlAuthorizer must be configured"));
     }
 
     @Test
@@ -156,15 +173,26 @@ class MetricPermissionConfigurationValidatorTest {
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
     @Import({
         ConservativeMetricSqlInspector.class,
+        HttpSqlAuthorizer.class,
         MetricPermissionConfigurationValidator.class,
         MetricPermissionEnforcer.class,
-        SqlAuthorizationConfigurationValidator.class
+        SqlAuthorizationEnforcer.class
     })
     static class ValidatorConfiguration {
 
         @Bean
         MetricPermissionProvider metricPermissionProvider() {
             return userId -> PermissionScope.empty();
+        }
+
+        @Bean
+        WebClient.Builder webClientBuilder() {
+            return WebClient.builder();
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
         }
     }
 
