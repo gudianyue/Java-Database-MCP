@@ -1,11 +1,17 @@
 package dev.databasemcp.permission;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-public class MetricPermissionEnforcer {
+@ConditionalOnProperty(name = "database-mcp.permission.metric.enabled", havingValue = "true")
+public class MetricPermissionEnforcer implements SqlAuthorizer {
+
+    private static final Logger log = LoggerFactory.getLogger(MetricPermissionEnforcer.class);
 
     private final ConservativeMetricSqlInspector inspector;
     private final MetricPermissionProvider provider;
@@ -20,38 +26,44 @@ public class MetricPermissionEnforcer {
         this.provider = provider;
     }
 
-    public void authorize(String sql, String userId) {
+    @Override
+    public boolean isAllowed(String userId, String sql) {
         MetricSqlInspection inspection = inspector.inspect(sql);
         if (!inspection.protectedResource()) {
-            return;
+            return true;
         }
         if (!inspection.inspectable()) {
-            deny(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE);
+            return reject("sql_uninspectable", userId, sql);
         }
         String effectiveUserId = userId == null ? "" : userId.trim();
         if (effectiveUserId.isBlank()) {
-            deny(PermissionErrorCode.PERMISSION_CONTEXT_MISSING);
+            return reject("context_missing", userId, sql);
         }
         if (provider == null) {
-            deny(PermissionErrorCode.PERMISSION_PLUGIN_DISABLED_OR_MISSING);
+            throw unavailable("provider_missing", userId, sql);
         }
         PermissionScope authorizedScopes;
         try {
             authorizedScopes = provider.authorizedScopes(effectiveUserId);
         } catch (MetricPermissionProviderTimeoutException e) {
-            deny(PermissionErrorCode.PERMISSION_PROVIDER_TIMEOUT);
-            return;
+            log.error("指标 SQL 授权失败：diagnostic=provider_timeout, userId={}, sql={}", userId, sql);
+            throw new SqlAuthorizationTimeoutException("metric permission provider timed out");
         } catch (RuntimeException e) {
-            deny(PermissionErrorCode.PERMISSION_PROVIDER_UNAVAILABLE);
-            return;
+            throw unavailable("provider_unavailable", userId, sql);
         }
         if (authorizedScopes == null || !authorizedScopes.containsAll(inspection.metricScopes())) {
-            deny(PermissionErrorCode.PERMISSION_DENIED);
+            return reject("scope_denied", userId, sql);
         }
+        return true;
     }
 
-    private static void deny(PermissionErrorCode code) {
-        throw new PermissionDeniedException(code);
+    private static boolean reject(String diagnostic, String userId, String sql) {
+        log.warn("指标 SQL 授权拒绝：diagnostic={}, userId={}, sql={}", diagnostic, userId, sql);
+        return false;
     }
 
+    private static IllegalStateException unavailable(String diagnostic, String userId, String sql) {
+        log.error("指标 SQL 授权失败：diagnostic={}, userId={}, sql={}", diagnostic, userId, sql);
+        return new IllegalStateException("metric permission authorizer unavailable");
+    }
 }

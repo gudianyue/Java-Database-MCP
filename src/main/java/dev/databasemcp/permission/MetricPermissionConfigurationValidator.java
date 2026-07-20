@@ -4,9 +4,11 @@ import dev.databasemcp.config.DatabaseMcpProperties;
 import java.util.Set;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "database-mcp.permission.metric.enabled", havingValue = "true")
 class MetricPermissionConfigurationValidator implements InitializingBean {
 
     private final DatabaseMcpProperties properties;
@@ -36,9 +38,6 @@ class MetricPermissionConfigurationValidator implements InitializingBean {
                     "database-mcp.permission.metric.provider.cache.key-prefix must not be blank"
                 );
             }
-        }
-        if (!permission.isEnabled() || !metric.isEnabled()) {
-            return;
         }
         requireConfigured(metric.getProtectedTables(), "database-mcp.permission.metric.protected-tables");
         requireConfigured(metric.getMetricColumns(), "database-mcp.permission.metric.metric-columns");

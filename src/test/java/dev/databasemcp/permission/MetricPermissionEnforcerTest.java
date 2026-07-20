@@ -1,15 +1,18 @@
 package dev.databasemcp.permission;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.databasemcp.config.DatabaseType;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class MetricPermissionEnforcerTest {
 
     private final ConservativeMetricSqlInspector inspector = new ConservativeMetricSqlInspector(
@@ -27,13 +30,9 @@ class MetricPermissionEnforcerTest {
             return PermissionScope.empty();
         });
 
-        enforcer.authorize("select * from public.orders", null);
+        assertThat(enforcer.isAllowed(null, "select * from public.orders")).isTrue();
 
-        assertThatCode(() -> {
-            if (called.get()) {
-                throw new AssertionError("provider should not be called");
-            }
-        }).doesNotThrowAnyException();
+        assertThat(called).isFalse();
     }
 
     @Test
@@ -50,26 +49,28 @@ class MetricPermissionEnforcerTest {
             return PermissionScope.empty();
         });
 
-        enforcer.authorize("select 'unclosed", null);
+        assertThat(enforcer.isAllowed(null, "select 'unclosed")).isTrue();
 
         assertThat(called).isFalse();
     }
 
     @Test
-    void returnsStableUninspectableErrorWithoutCallingProviderOrLeakingSql() {
+    void rejectsUninspectableSqlWithInternalDiagnosticOnly(CapturedOutput output) {
         AtomicBoolean called = new AtomicBoolean(false);
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(inspector, userId -> {
             called.set(true);
             return PermissionScope.empty();
         });
+        String sql = "select 'sensitive-sql-marker";
 
-        assertThatThrownBy(() -> enforcer.authorize("select 'sensitive-sql-marker", null))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessage("permission_sql_uninspectable")
-            .hasMessageNotContaining("sensitive-sql-marker")
-            .hasMessageNotContaining("druid")
-            .hasMessageNotContaining("syntax");
+        assertThat(enforcer.isAllowed("user-1", sql)).isFalse();
         assertThat(called).isFalse();
+        assertThat(output)
+            .contains("diagnostic=sql_uninspectable")
+            .contains("userId=user-1")
+            .contains("sql=" + sql)
+            .doesNotContain("druid")
+            .doesNotContain("syntax");
     }
 
     @Test
@@ -79,12 +80,10 @@ class MetricPermissionEnforcerTest {
             userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            " "
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_context_missing");
+        assertThat(enforcer.isAllowed(
+            " ",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
+        )).isFalse();
     }
 
     @Test
@@ -98,26 +97,26 @@ class MetricPermissionEnforcerTest {
             }
         );
 
-        assertThatCode(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            " user-1 "
-        )).doesNotThrowAnyException();
+        assertThat(enforcer.isAllowed(
+            " user-1 ",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
+        )).isTrue();
         assertThat(requestedUserId).hasValue("user-1");
     }
 
     @Test
-    void rejectsSqlScopeOutsideProviderAuthorization() {
+    void rejectsUnauthorizedScopeAsGenericBusinessDecision(CapturedOutput output) {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,
             userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
         );
+        String sql = "select * from gkschema.gk_qta_data where quota_id = 'B' and quota_scene = 'custom'";
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'B' and quota_scene = 'custom'",
-            "user-1"
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_denied");
+        assertThat(enforcer.isAllowed("user-1", sql)).isFalse();
+        assertThat(output)
+            .contains("diagnostic=scope_denied")
+            .contains("userId=user-1")
+            .contains("sql=" + sql);
     }
 
     @Test
@@ -127,12 +126,10 @@ class MetricPermissionEnforcerTest {
             userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id in ('A', 'B') and quota_scene = 'default'",
-            "user-1"
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_denied");
+        assertThat(enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id in ('A', 'B') and quota_scene = 'default'"
+        )).isFalse();
     }
 
     @Test
@@ -142,12 +139,10 @@ class MetricPermissionEnforcerTest {
             userId -> PermissionScope.empty()
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            "user-1"
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_denied");
+        assertThat(enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
+        )).isFalse();
     }
 
     @Test
@@ -157,12 +152,10 @@ class MetricPermissionEnforcerTest {
             (MetricPermissionProvider) null
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            " "
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_context_missing");
+        assertThat(enforcer.isAllowed(
+            " ",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
+        )).isFalse();
     }
 
     @Test
@@ -172,54 +165,53 @@ class MetricPermissionEnforcerTest {
             userId -> null
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            "user-1"
-        ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_denied");
+        assertThat(enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
+        )).isFalse();
     }
 
     @Test
-    void rejectsProviderFailureFailClosed() {
+    void mapsProviderFailureToOrdinaryAuthorizerFailure() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(inspector, userId -> {
             throw new IllegalStateException("provider down");
         });
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            "user-1"
+        assertThatThrownBy(() -> enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
         ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_provider_unavailable");
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageNotContaining("permission_provider_unavailable")
+            .hasMessageNotContaining("provider down");
     }
 
     @Test
-    void rejectsProviderTimeoutWithStableErrorCode() {
+    void mapsProviderTimeoutToPublicAuthorizerTimeout() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(inspector, userId -> {
             throw new MetricPermissionProviderTimeoutException("authorization query timed out");
         });
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            "user-1"
+        assertThatThrownBy(() -> enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
         ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_provider_timeout");
+            .isInstanceOf(SqlAuthorizationTimeoutException.class)
+            .hasMessageNotContaining("permission_provider_timeout");
     }
 
     @Test
-    void rejectsProtectedSqlWhenProviderIsMissing() {
+    void mapsMissingProviderToOrdinaryAuthorizerFailure() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,
             (MetricPermissionProvider) null
         );
 
-        assertThatThrownBy(() -> enforcer.authorize(
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'",
-            "user-1"
+        assertThatThrownBy(() -> enforcer.isAllowed(
+            "user-1",
+            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
         ))
-            .isInstanceOf(PermissionDeniedException.class)
-            .hasMessageContaining("permission_plugin_disabled_or_missing");
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageNotContaining("permission_plugin_disabled_or_missing");
     }
 }

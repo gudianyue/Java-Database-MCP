@@ -28,14 +28,13 @@ class MetricPermissionConfigurationValidatorTest {
     }
 
     @Test
-    void failsStartupWhenCacheTtlIsInvalidWhileMetricPermissionIsDisabled() {
+    void ignoresMetricCacheConfigurationWhenMetricAuthorizerIsDisabled() {
         contextRunner
             .withPropertyValues(
                 "database-mcp.permission.metric.provider.cache.enabled=true",
                 "database-mcp.permission.metric.provider.cache.ttl-seconds=0"
             )
-            .run(context -> assertThat(context.getStartupFailure())
-                .hasMessageContaining("cache.ttl-seconds"));
+            .run(context -> assertThat(context).hasNotFailed());
     }
 
     @Test
@@ -75,6 +74,21 @@ class MetricPermissionConfigurationValidatorTest {
                 "database-mcp.permission.metric.scene-columns[0]=quota_scene"
             )
             .run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void failsStartupWhenMetricAndCustomAuthorizersAreBothSelected() {
+        contextRunner
+            .withUserConfiguration(CustomAuthorizerConfiguration.class)
+            .withPropertyValues(
+                "database-mcp.permission.enabled=true",
+                "database-mcp.permission.metric.enabled=true",
+                "database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data",
+                "database-mcp.permission.metric.metric-columns[0]=quota_id",
+                "database-mcp.permission.metric.scene-columns[0]=quota_scene"
+            )
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasMessageContaining("exactly one SqlAuthorizer"));
     }
 
     @Test
@@ -143,7 +157,8 @@ class MetricPermissionConfigurationValidatorTest {
     @Import({
         ConservativeMetricSqlInspector.class,
         MetricPermissionConfigurationValidator.class,
-        MetricPermissionEnforcer.class
+        MetricPermissionEnforcer.class,
+        SqlAuthorizationConfigurationValidator.class
     })
     static class ValidatorConfiguration {
 
@@ -159,6 +174,15 @@ class MetricPermissionConfigurationValidatorTest {
         @Bean
         MetricPermissionProvider secondMetricPermissionProvider() {
             return userId -> PermissionScope.empty();
+        }
+    }
+
+    @Configuration
+    static class CustomAuthorizerConfiguration {
+
+        @Bean
+        SqlAuthorizer customSqlAuthorizer() {
+            return (userId, sql) -> true;
         }
     }
 }

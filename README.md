@@ -40,9 +40,22 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 - 索引建议：`analyze_workload_indexes`、`analyze_query_indexes`，从 `__internal_schema.audit_log` 和 `EXPLAIN` 输出只读建议
 - 不支持项：`sequence` / `extension` 对象、`analyze=true`、`hypothetical_indexes`
 
-## 指标权限
+## SQL 授权
 
-`execute_sql`、`explain_query` 和 `analyze_query_indexes` 的调用方只需传原业务参数和 `user_id`。Agent 必须始终传入可信的 `user_id`；服务端不接受调用方声明权限范围，而是从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围，再与 Provider 返回的授权范围比较。权限开启时，所有 SQL 先按当前数据库方言通过 Druid AST 全局安全检查，只有可靠识别为未引用受保护表的查询才不调用 Provider；权限关闭时完全旁路 Druid 和 Provider。
+`execute_sql`、`explain_query` 和 `analyze_query_indexes` 的调用方只需传原业务参数和 `user_id`。权限默认关闭；开启后，服务端会把未经修改的 `user_id` 与原始 SQL 交给唯一的 `SqlAuthorizer`，只有返回 `true` 才进入执行、解释或分析。空 SQL、空 `user_id`、明确拒绝、超时或授权器异常都会 fail-closed。
+
+接入项目可以提供自定义 Spring Bean：
+
+```java
+@Bean
+SqlAuthorizer sqlAuthorizer() {
+    return (userId, sql) -> permissionService.isAllowed(userId, sql);
+}
+```
+
+自定义实现只作允许或拒绝决定，不修改 SQL，也不负责验证 `user_id` 的真实性。`database-mcp.permission.enabled=true` 时必须恰好存在一个 `SqlAuthorizer` Bean，否则应用拒绝启动。
+
+现有“Druid AST + 指标范围 Provider”能力继续作为内置 `SqlAuthorizer` 使用：启用 `database-mcp.permission.metric.enabled` 后，从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围并与 Provider 返回的授权范围比较；未启用指标实现时，通用核心不解释任何指标语义。指标 SQL 无法检查或范围不足统一返回 `permission_denied`，Provider 超时与其他故障分别返回 `permission_authorizer_timeout`、`permission_authorizer_unavailable`；细分原因只进入服务端诊断日志。
 
 请求示例：
 
@@ -53,7 +66,7 @@ Database MCP Java 是一个通用数据库 MCP 服务，基于 Java 21、Spring 
 }
 ```
 
-安全 SQL 写法、拒绝边界、Provider 与缓存配置、错误码说明见 [docs/permission-control.md](docs/permission-control.md)。
+通用授权契约、指标安全 SQL 写法、Provider 与缓存配置、错误码说明见 [docs/permission-control.md](docs/permission-control.md)。
 
 ## MCP 传输
 
@@ -78,7 +91,7 @@ SERVER_ADDRESS=0.0.0.0
 SERVER_PORT=8000
 ```
 
-本项目不内置 MCP 入口身份认证。公开网络访问时，应放在具备身份认证和访问控制能力的反向代理或网关之后。指标范围授权依赖 Agent 或网关先完成用户认证，并把真实用户可信绑定到每次请求的 `user_id`；本项目仅校验受保护 SQL 的指标授权范围。
+本项目不内置 MCP 入口身份认证。公开网络访问时，应放在具备身份认证和访问控制能力的反向代理或网关之后。SQL 授权依赖 Agent 或网关先完成用户认证，并把真实用户可信绑定到每次请求的 `user_id`；本项目只把该不透明标识原样交给授权器。
 
 ## 数据库连接
 

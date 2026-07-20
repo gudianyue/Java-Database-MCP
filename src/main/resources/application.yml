@@ -33,13 +33,13 @@ database-mcp:
   database-username: ${DATABASE_USERNAME:}
   database-password: ${DATABASE_PASSWORD:}
 
-  # 指标 SQL 权限控制（默认关闭）。
-  # 完整说明见 docs/permission-control.md；开启后 MetricPermissionConfigurationValidator
-  # 会在启动时校验以下 5 项必填（任一为空即拒绝启动）：
+  # SQL 授权（默认关闭）。完整说明见 docs/permission-control.md。
+  # permission.enabled=true 时必须恰好存在 1 个 SqlAuthorizer Bean；可由接入项目自定义，
+  # 也可启用下面的内置指标实现。自定义实现时不要启用 metric。
+  # 指标实现会在启动时校验以下配置（任一缺失即拒绝启动）：
   #   metric.protected-tables / metric.metric-columns / metric.scene-columns
-  #   metric.provider.authorization-query（必须含且仅含一个占位符）
-  #   恰好 1 个 MetricPermissionProvider Bean（默认 ConfiguredSqlMetricPermissionProvider）
-  # 如需对接外部 IAM，把 authorization-query 留空并自实现 MetricPermissionProvider 即可。
+  #   恰好 1 个 MetricPermissionProvider Bean；使用内置 Provider 时 authorization-query 必须含且仅含一个占位符
+  # 如需对接其他系统，保持 metric.enabled=false 并自实现 SqlAuthorizer；接口只接收 userId 和原始 SQL。
   # permission:
   #   enabled: true
   #   metric:
@@ -56,7 +56,7 @@ database-mcp:
   #         FROM <schema>.user_metric_auth
   #         WHERE user_id = '${user_id}'
   #       scene-delimiters: [",", "，", ";", "|"]   # quota_scenes 拆分符；不配默认同上
-  #       timeout-seconds: 10            # 超时→permission_provider_timeout
+  #       timeout-seconds: 10            # 超时→permission_authorizer_timeout
   #       cache:
   #         enabled: false              # 生产问数场景显式设为 true；默认 false
   #         ttl-seconds: 300            # 固定 TTL，命中不续期

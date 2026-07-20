@@ -3,7 +3,7 @@ package dev.databasemcp.mcp;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
-import dev.databasemcp.permission.MetricPermissionEnforcer;
+import dev.databasemcp.permission.SqlAuthorizationEnforcer;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -20,14 +20,14 @@ public class DatabaseToolFacade {
     private final SqlClient sqlClient;
     private final ExplainPlanService explainPlanService;
     private final DiagnosticDialectProvider diagnosticDialectProvider;
-    private final MetricPermissionEnforcer permissionEnforcer;
+    private final SqlAuthorizationEnforcer permissionEnforcer;
 
     public DatabaseToolFacade(
         DatabaseDialectProvider databaseDialectProvider,
         SqlClient sqlClient,
         ExplainPlanService explainPlanService,
         DiagnosticDialectProvider diagnosticDialectProvider,
-        MetricPermissionEnforcer permissionEnforcer
+        SqlAuthorizationEnforcer permissionEnforcer
     ) {
         this.databaseDialectProvider = databaseDialectProvider;
         this.sqlClient = sqlClient;
@@ -70,7 +70,7 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "execute_sql", description = "Execute SQL. Always pass user_id; protected metric scopes are derived from the SQL.")
+    @McpTool(name = "execute_sql", description = "执行 SQL。始终传入 user_id；执行前由已配置的 SQL 授权器决定是否允许。")
     public String executeSql(
         @McpToolParam(description = "要执行的 SQL") String sql,
         @McpToolParam(description = "user_id: caller identity supplied by the Agent; always pass this value") String user_id
@@ -83,7 +83,7 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "explain_query", description = "Explain SQL. Always pass user_id; protected metric scopes are derived from the SQL before EXPLAIN.")
+    @McpTool(name = "explain_query", description = "解释 SQL。始终传入 user_id；解释前由已配置的 SQL 授权器决定是否允许。")
     public String explainQuery(
         @McpToolParam(description = "要解释的 SQL 查询") String sql,
         @McpToolParam(description = "是否在支持的数据库上执行 analyze 计划；默认 false") Boolean analyze,
@@ -137,7 +137,7 @@ public class DatabaseToolFacade {
         }
     }
 
-    @McpTool(name = "analyze_query_indexes", description = "Analyze SQL queries for indexes. Always pass user_id; every query is authorized from its SQL before analysis.")
+    @McpTool(name = "analyze_query_indexes", description = "分析 SQL 查询的索引。始终传入 user_id；分析前由已配置的 SQL 授权器逐条决定是否允许。")
     public String analyzeQueryIndexes(
         @McpToolParam(description = "要分析的 SQL 查询列表，最多 10 条") List<String> queries,
         @McpToolParam(description = "推荐索引的最大总大小，单位 MB；默认 10000") Integer maxIndexSizeMb,

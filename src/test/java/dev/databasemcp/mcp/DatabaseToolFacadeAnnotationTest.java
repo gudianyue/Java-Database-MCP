@@ -118,6 +118,16 @@ class DatabaseToolFacadeAnnotationTest {
             .isEqualTo("user_id");
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("permissionProtectedMethods")
+    void sqlToolsDescribeGenericAuthorization(Method method) {
+        String description = method.getAnnotation(McpTool.class).description();
+
+        assertThat(description)
+            .contains("user_id", "SQL 授权器")
+            .doesNotContain("指标", "metric scope");
+    }
+
     private static Stream<Method> permissionProtectedMethods() throws NoSuchMethodException {
         return Stream.of(
             DatabaseToolFacade.class.getDeclaredMethod("executeSql", String.class, String.class),

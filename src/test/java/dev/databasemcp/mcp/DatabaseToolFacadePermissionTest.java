@@ -11,9 +11,9 @@ import dev.databasemcp.diagnostics.DiagnosticDialect;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
 import dev.databasemcp.diagnostics.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
-import dev.databasemcp.permission.MetricPermissionEnforcer;
 import dev.databasemcp.permission.PermissionDeniedException;
 import dev.databasemcp.permission.PermissionErrorCode;
+import dev.databasemcp.permission.SqlAuthorizationEnforcer;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
@@ -30,7 +30,7 @@ class DatabaseToolFacadePermissionTest {
     private final SqlClient sqlClient = mock(SqlClient.class);
     private final ExplainPlanService explainPlanService = mock(ExplainPlanService.class);
     private final DiagnosticDialectProvider diagnosticDialectProvider = mock(DiagnosticDialectProvider.class);
-    private final MetricPermissionEnforcer enforcer = mock(MetricPermissionEnforcer.class);
+    private final SqlAuthorizationEnforcer enforcer = mock(SqlAuthorizationEnforcer.class);
     private final DatabaseToolFacade facade = new DatabaseToolFacade(
         databaseDialectProvider,
         sqlClient,
@@ -132,30 +132,30 @@ class DatabaseToolFacadePermissionTest {
     }
 
     @Test
-    void executeSqlRejectsUninspectableProtectedUnionBeforeQuerying() {
+    void executeSqlRejectsDeniedProtectedUnionBeforeQuerying() {
         String sql = """
             select * from gkschema.gk_qta_data
             where quota_id = 'A' and quota_scene = 'default'
             union all select * from gkschema.gk_qta_data
             """;
-        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_DENIED))
             .when(enforcer).authorize(sql, "user-1");
 
         String result = facade.executeSql(sql, "user-1");
 
-        org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
+        org.assertj.core.api.Assertions.assertThat(result).contains("permission_denied");
         verifyNoInteractions(sqlClient);
     }
 
     @Test
     void explainQueryRejectsBeforeExplaining() {
         String sql = "select 'unclosed";
-        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_DENIED))
             .when(enforcer).authorize(sql, "user-1");
 
         String result = facade.explainQuery(sql, false, List.of(), "user-1");
 
-        org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
+        org.assertj.core.api.Assertions.assertThat(result).contains("permission_denied");
         verifyNoInteractions(explainPlanService);
     }
 
@@ -165,12 +165,12 @@ class DatabaseToolFacadePermissionTest {
         String rejectedSql = "select 'unclosed";
         String uncheckedSql = "select * from public.customers";
         List<String> queries = List.of(allowedSql, rejectedSql, uncheckedSql);
-        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_SQL_UNINSPECTABLE))
+        doThrow(new PermissionDeniedException(PermissionErrorCode.PERMISSION_DENIED))
             .when(enforcer).authorize(rejectedSql, "user-1");
 
         String result = facade.analyzeQueryIndexes(queries, 10000, "dta", "user-1");
 
-        org.assertj.core.api.Assertions.assertThat(result).contains("permission_sql_uninspectable");
+        org.assertj.core.api.Assertions.assertThat(result).contains("permission_denied");
         InOrder order = inOrder(enforcer);
         order.verify(enforcer).authorize(allowedSql, "user-1");
         order.verify(enforcer).authorize(rejectedSql, "user-1");
