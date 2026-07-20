@@ -2,6 +2,7 @@ package dev.databasemcp.permission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -47,6 +50,44 @@ class RedisMetricPermissionCacheTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         objectMapper = new ObjectMapper();
         cache = new RedisMetricPermissionCache(redisTemplate, objectMapper, properties(300, KEY_PREFIX));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void rejectsNonPositiveTtlWhenMetricAuthorizationAndCacheAreEnabled(int ttlSeconds) {
+        DatabaseMcpProperties properties = properties(ttlSeconds, KEY_PREFIX);
+        properties.getPermission().getMetric().setEnabled(true);
+        properties.getPermission().getMetric().getProvider().getCache().setEnabled(true);
+
+        assertThatThrownBy(() -> new RedisMetricPermissionCache(redisTemplate, objectMapper, properties))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage(
+                "database-mcp.permission.metric.provider.cache.ttl-seconds must be greater than zero"
+            );
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", " ", "\t"})
+    void rejectsBlankKeyPrefixWhenMetricAuthorizationAndCacheAreEnabled(String keyPrefix) {
+        DatabaseMcpProperties properties = properties(300, keyPrefix);
+        properties.getPermission().getMetric().setEnabled(true);
+        properties.getPermission().getMetric().getProvider().getCache().setEnabled(true);
+
+        assertThatThrownBy(() -> new RedisMetricPermissionCache(redisTemplate, objectMapper, properties))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage(
+                "database-mcp.permission.metric.provider.cache.key-prefix must not be blank"
+            );
+    }
+
+    @Test
+    void ignoresInvalidCacheConfigurationWhenMetricAuthorizationIsDisabled() {
+        DatabaseMcpProperties properties = properties(-1, null);
+        properties.getPermission().getMetric().getProvider().getCache().setEnabled(true);
+
+        assertThatCode(() -> new RedisMetricPermissionCache(redisTemplate, objectMapper, properties))
+            .doesNotThrowAnyException();
     }
 
     @Test

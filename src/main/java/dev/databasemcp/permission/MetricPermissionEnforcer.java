@@ -1,5 +1,7 @@
 package dev.databasemcp.permission;
 
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,18 +14,30 @@ import org.springframework.stereotype.Component;
 public class MetricPermissionEnforcer implements SqlAuthorizer {
 
     private static final Logger log = LoggerFactory.getLogger(MetricPermissionEnforcer.class);
+    private static final String CONFIGURATION_ERROR = "exactly one MetricPermissionProvider must be configured";
 
     private final ConservativeMetricSqlInspector inspector;
     private final MetricPermissionProvider provider;
 
     @Autowired
     MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, ObjectProvider<MetricPermissionProvider> providers) {
-        this(inspector, providers.getIfUnique());
+        this(inspector, requireSingleProvider(providers));
     }
 
     MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, MetricPermissionProvider provider) {
         this.inspector = inspector;
+        if (provider == null) {
+            throw new IllegalStateException(CONFIGURATION_ERROR);
+        }
         this.provider = provider;
+    }
+
+    private static MetricPermissionProvider requireSingleProvider(ObjectProvider<MetricPermissionProvider> providers) {
+        List<MetricPermissionProvider> candidates = providers.orderedStream().toList();
+        if (candidates.size() != 1) {
+            throw new IllegalStateException(CONFIGURATION_ERROR);
+        }
+        return candidates.getFirst();
     }
 
     @Override
@@ -38,9 +52,6 @@ public class MetricPermissionEnforcer implements SqlAuthorizer {
         String effectiveUserId = userId == null ? "" : userId.trim();
         if (effectiveUserId.isBlank()) {
             return reject("context_missing", userId, sql);
-        }
-        if (provider == null) {
-            throw unavailable("provider_missing", userId, sql);
         }
         PermissionScope authorizedScopes;
         try {

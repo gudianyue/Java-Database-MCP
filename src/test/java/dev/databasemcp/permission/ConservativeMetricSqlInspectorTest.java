@@ -13,8 +13,10 @@ import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.statement.SQLSelectStatement;
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -71,6 +73,106 @@ class ConservativeMetricSqlInspectorTest {
             });
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidConfiguredSets")
+    void rejectsInvalidProtectedTablesDuringPropertyConstruction(String caseName, Set<String> values) {
+        assertInvalidConfiguredSet(
+            metric -> metric.setProtectedTables(values),
+            "database-mcp.permission.metric.protected-tables"
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidConfiguredSets")
+    void rejectsInvalidMetricColumnsDuringPropertyConstruction(String caseName, Set<String> values) {
+        assertInvalidConfiguredSet(
+            metric -> metric.setMetricColumns(values),
+            "database-mcp.permission.metric.metric-columns"
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidConfiguredSets")
+    void rejectsInvalidSceneColumnsDuringPropertyConstruction(String caseName, Set<String> values) {
+        assertInvalidConfiguredSet(
+            metric -> metric.setSceneColumns(values),
+            "database-mcp.permission.metric.scene-columns"
+        );
+    }
+
+    @Test
+    void validatesMetricConfigurationWhenGlobalSqlAuthorizationIsDisabled() {
+        DatabaseMcpProperties properties = enabledMetricProperties();
+        properties.getPermission().setEnabled(false);
+        properties.getPermission().getMetric().setProtectedTables(Set.of());
+
+        assertThatThrownBy(() -> new ConservativeMetricSqlInspector(properties))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage(
+                "database-mcp.permission.metric.protected-tables"
+                    + " must be configured when metric permission is enabled"
+            );
+    }
+
+    @Test
+    void bypassesSqlParsingAfterValidatingDormantMetricConfiguration() {
+        DatabaseMcpProperties properties = enabledMetricProperties();
+        properties.getPermission().setEnabled(false);
+        ConservativeMetricSqlInspector disabledInspector = new ConservativeMetricSqlInspector(properties);
+
+        MetricSqlInspection inspection = disabledInspector.inspect("select 'unclosed");
+
+        assertThat(inspection.protectedResource()).isFalse();
+    }
+
+    @Test
+    void normalizesConfiguredIdentifiersWhenEachSetContainsAValidValue() {
+        DatabaseMcpProperties properties = enabledMetricProperties();
+        properties.getPermission().getMetric().setProtectedTables(
+            configuredValues("\"GKSCHEMA\".`GK_QTA_DATA`")
+        );
+        properties.getPermission().getMetric().setMetricColumns(configuredValues("\"QUOTA_ID\""));
+        properties.getPermission().getMetric().setSceneColumns(configuredValues("`QUOTA_SCENE`"));
+        ConservativeMetricSqlInspector configuredInspector = new ConservativeMetricSqlInspector(properties);
+
+        MetricSqlInspection inspection = configuredInspector.inspect("""
+            select * from gkschema.gk_qta_data
+            where quota_id = 'A' and quota_scene = 'default'
+            """);
+
+        assertThat(inspection.protectedResource()).isTrue();
+        assertThat(inspection.inspectable()).isTrue();
+        assertThat(inspection.metricScopes()).containsExactly(new MetricScope("A", "default"));
+    }
+
+    private static Stream<Arguments> invalidConfiguredSets() {
+        return Stream.of(
+            arguments("null", (Set<String>) null),
+            arguments("empty", Set.of()),
+            arguments("blank-only", Set.of(" ", "\t"))
+        );
+    }
+
+    private static void assertInvalidConfiguredSet(
+        Consumer<DatabaseMcpProperties.MetricProperties> configure,
+        String propertyName
+    ) {
+        DatabaseMcpProperties properties = enabledMetricProperties();
+        configure.accept(properties.getPermission().getMetric());
+
+        assertThatThrownBy(() -> new ConservativeMetricSqlInspector(properties))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage(propertyName + " must be configured when metric permission is enabled");
+    }
+
+    private static Set<String> configuredValues(String value) {
+        Set<String> values = new HashSet<>();
+        values.add(null);
+        values.add(" ");
+        values.add(value);
+        return values;
+    }
+
     @Test
     void foldsVisitorFailureIntoStableUninspectableResult() {
         SQLSelectStatement statement = mock(SQLSelectStatement.class);
@@ -91,6 +193,16 @@ class ConservativeMetricSqlInspectorTest {
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
     @Import(ConservativeMetricSqlInspector.class)
     static class InspectorTestConfiguration {
+    }
+
+    private static DatabaseMcpProperties enabledMetricProperties() {
+        DatabaseMcpProperties properties = new DatabaseMcpProperties();
+        properties.getPermission().setEnabled(true);
+        properties.getPermission().getMetric().setEnabled(true);
+        properties.getPermission().getMetric().setProtectedTables(Set.of("gkschema.gk_qta_data"));
+        properties.getPermission().getMetric().setMetricColumns(Set.of("quota_id"));
+        properties.getPermission().getMetric().setSceneColumns(Set.of("quota_scene"));
+        return properties;
     }
 
     @Test

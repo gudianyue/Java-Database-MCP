@@ -9,18 +9,60 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 
 @ExtendWith(OutputCaptureExtension.class)
 class MetricPermissionEnforcerTest {
 
-    private final ConservativeMetricSqlInspector inspector = new ConservativeMetricSqlInspector(
-        DatabaseType.POSTGRESQL,
-        Set.of("gkschema.gk_qta_data"),
-        Set.of("quota_id"),
-        Set.of("quota_scene")
-    );
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+        .withUserConfiguration(EnforcerConfiguration.class)
+        .withPropertyValues("database-mcp.permission.metric.enabled=true");
+
+    private final ConservativeMetricSqlInspector inspector = newInspector();
+
+    @Test
+    void failsStartupWithoutProvider() {
+        contextRunner.run(context -> assertThat(context.getStartupFailure())
+            .hasRootCauseMessage("exactly one MetricPermissionProvider must be configured"));
+    }
+
+    @Test
+    void startsWithExactlyOneProvider() {
+        contextRunner
+            .withUserConfiguration(PrimaryProviderConfiguration.class)
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).hasSingleBean(MetricPermissionEnforcer.class);
+            });
+    }
+
+    @Test
+    void failsStartupWithMultipleProvidersEvenWhenOneIsPrimary() {
+        contextRunner
+            .withUserConfiguration(PrimaryProviderConfiguration.class, SecondProviderConfiguration.class)
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasRootCauseMessage("exactly one MetricPermissionProvider must be configured"));
+    }
+
+    @Test
+    void ignoresMultipleProvidersWhenMetricAuthorizationIsDisabled() {
+        new ApplicationContextRunner()
+            .withUserConfiguration(
+                EnforcerConfiguration.class,
+                PrimaryProviderConfiguration.class,
+                SecondProviderConfiguration.class
+            )
+            .run(context -> {
+                assertThat(context).hasNotFailed();
+                assertThat(context).doesNotHaveBean(MetricPermissionEnforcer.class);
+            });
+    }
 
     @Test
     void doesNotCallProviderForNonProtectedSqlEvenWithoutUserId() {
@@ -75,15 +117,17 @@ class MetricPermissionEnforcerTest {
 
     @Test
     void rejectsProtectedSqlWhenUserIdIsMissing() {
-        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
-            inspector,
-            userId -> new PermissionScope(Set.of(new MetricScope("A", "default")))
-        );
+        AtomicBoolean called = new AtomicBoolean(false);
+        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(inspector, userId -> {
+            called.set(true);
+            return new PermissionScope(Set.of(new MetricScope("A", "default")));
+        });
 
         assertThat(enforcer.isAllowed(
             " ",
             "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
         )).isFalse();
+        assertThat(called).isFalse();
     }
 
     @Test
@@ -146,19 +190,6 @@ class MetricPermissionEnforcerTest {
     }
 
     @Test
-    void rejectsMissingContextBeforeMissingProvider() {
-        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
-            inspector,
-            (MetricPermissionProvider) null
-        );
-
-        assertThat(enforcer.isAllowed(
-            " ",
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
-        )).isFalse();
-    }
-
-    @Test
     void rejectsNullProviderResult() {
         MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
             inspector,
@@ -201,17 +232,47 @@ class MetricPermissionEnforcerTest {
     }
 
     @Test
-    void mapsMissingProviderToOrdinaryAuthorizerFailure() {
-        MetricPermissionEnforcer enforcer = new MetricPermissionEnforcer(
-            inspector,
-            (MetricPermissionProvider) null
-        );
-
-        assertThatThrownBy(() -> enforcer.isAllowed(
-            "user-1",
-            "select * from gkschema.gk_qta_data where quota_id = 'A' and quota_scene = 'default'"
-        ))
+    void requiresProviderWhenConstructedDirectly() {
+        assertThatThrownBy(() -> new MetricPermissionEnforcer(inspector, (MetricPermissionProvider) null))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageNotContaining("permission_plugin_disabled_or_missing");
+            .hasMessage("exactly one MetricPermissionProvider must be configured");
+    }
+
+    private static ConservativeMetricSqlInspector newInspector() {
+        return new ConservativeMetricSqlInspector(
+            DatabaseType.POSTGRESQL,
+            Set.of("gkschema.gk_qta_data"),
+            Set.of("quota_id"),
+            Set.of("quota_scene")
+        );
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import(MetricPermissionEnforcer.class)
+    static class EnforcerConfiguration {
+
+        @Bean
+        ConservativeMetricSqlInspector metricSqlInspector() {
+            return newInspector();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class PrimaryProviderConfiguration {
+
+        @Bean
+        @Primary
+        MetricPermissionProvider primaryMetricPermissionProvider() {
+            return userId -> PermissionScope.empty();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SecondProviderConfiguration {
+
+        @Bean
+        MetricPermissionProvider secondMetricPermissionProvider() {
+            return userId -> PermissionScope.empty();
+        }
     }
 }

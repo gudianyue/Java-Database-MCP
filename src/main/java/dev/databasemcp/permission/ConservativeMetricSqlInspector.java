@@ -52,11 +52,19 @@ class ConservativeMetricSqlInspector {
     ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
         this(
             properties.getDatabaseType(),
-            properties.getPermission().isEnabled() && properties.getPermission().getMetric().isEnabled()
-                ? properties.getPermission().getMetric().getProtectedTables()
-                : Set.of(),
-            properties.getPermission().getMetric().getMetricColumns(),
-            properties.getPermission().getMetric().getSceneColumns()
+            configuredProtectedTables(properties),
+            properties.getPermission().getMetric().isEnabled()
+                ? requireConfigured(
+                    properties.getPermission().getMetric().getMetricColumns(),
+                    "database-mcp.permission.metric.metric-columns"
+                )
+                : properties.getPermission().getMetric().getMetricColumns(),
+            properties.getPermission().getMetric().isEnabled()
+                ? requireConfigured(
+                    properties.getPermission().getMetric().getSceneColumns(),
+                    "database-mcp.permission.metric.scene-columns"
+                )
+                : properties.getPermission().getMetric().getSceneColumns()
         );
     }
 
@@ -70,6 +78,18 @@ class ConservativeMetricSqlInspector {
         this.protectedTables = normalizeSet(protectedTables);
         this.metricColumns = normalizeSet(metricColumns);
         this.sceneColumns = normalizeSet(sceneColumns);
+    }
+
+    private static Set<String> configuredProtectedTables(DatabaseMcpProperties properties) {
+        DatabaseMcpProperties.PermissionProperties permission = properties.getPermission();
+        if (!permission.getMetric().isEnabled()) {
+            return Set.of();
+        }
+        Set<String> configured = requireConfigured(
+            permission.getMetric().getProtectedTables(),
+            "database-mcp.permission.metric.protected-tables"
+        );
+        return permission.isEnabled() ? configured : Set.of();
     }
 
     MetricSqlInspection inspect(String sql) {
@@ -482,6 +502,13 @@ class ConservativeMetricSqlInspector {
                 .forEach(normalized::add);
         }
         return Set.copyOf(normalized);
+    }
+
+    private static Set<String> requireConfigured(Set<String> values, String propertyName) {
+        if (values == null || values.stream().noneMatch(value -> value != null && !value.isBlank())) {
+            throw new IllegalStateException(propertyName + " must be configured when metric permission is enabled");
+        }
+        return values;
     }
 
     private static String normalize(String value) {

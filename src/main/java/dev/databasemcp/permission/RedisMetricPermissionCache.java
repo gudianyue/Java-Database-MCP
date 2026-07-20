@@ -39,6 +39,18 @@ class RedisMetricPermissionCache {
             .getMetric()
             .getProvider()
             .getCache();
+        boolean shouldValidateCacheConfiguration = properties.getPermission().getMetric().isEnabled()
+            && cache.isEnabled();
+        if (shouldValidateCacheConfiguration && cache.getTtlSeconds() <= 0) {
+            throw new IllegalStateException(
+                "database-mcp.permission.metric.provider.cache.ttl-seconds must be greater than zero"
+            );
+        }
+        if (shouldValidateCacheConfiguration && (cache.getKeyPrefix() == null || cache.getKeyPrefix().isBlank())) {
+            throw new IllegalStateException(
+                "database-mcp.permission.metric.provider.cache.key-prefix must not be blank"
+            );
+        }
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.ttl = Duration.ofSeconds(cache.getTtlSeconds());

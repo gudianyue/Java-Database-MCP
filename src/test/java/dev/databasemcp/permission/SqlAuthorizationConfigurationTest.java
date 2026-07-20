@@ -97,6 +97,35 @@ class SqlAuthorizationConfigurationTest {
                 .hasRootCauseMessage("exactly one SqlAuthorizer must be configured"));
     }
 
+    @Test
+    void metricAndCustomAuthorizersFailStartupTogether() {
+        contextRunner
+            .withUserConfiguration(MetricAuthorizerConfiguration.class, OneAuthorizerConfiguration.class)
+            .withPropertyValues(enabledMetricProperties())
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasRootCauseMessage("exactly one SqlAuthorizer must be configured"));
+    }
+
+    @Test
+    void metricAndHttpAuthorizersFailStartupTogether() {
+        contextRunner
+            .withUserConfiguration(MetricAuthorizerConfiguration.class)
+            .withPropertyValues(enabledMetricProperties())
+            .withPropertyValues("database-mcp.permission.http.url=http://127.0.0.1:8080/authorize")
+            .run(context -> assertThat(context.getStartupFailure())
+                .hasRootCauseMessage("exactly one SqlAuthorizer must be configured"));
+    }
+
+    private static String[] enabledMetricProperties() {
+        return new String[] {
+            "database-mcp.permission.enabled=true",
+            "database-mcp.permission.metric.enabled=true",
+            "database-mcp.permission.metric.protected-tables[0]=gkschema.gk_qta_data",
+            "database-mcp.permission.metric.metric-columns[0]=quota_id",
+            "database-mcp.permission.metric.scene-columns[0]=quota_scene"
+        };
+    }
+
     @Configuration
     @EnableConfigurationProperties(DatabaseMcpProperties.class)
     @Import({ HttpSqlAuthorizer.class, SqlAuthorizationEnforcer.class })
@@ -110,6 +139,16 @@ class SqlAuthorizationConfigurationTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import({ ConservativeMetricSqlInspector.class, MetricPermissionEnforcer.class })
+    static class MetricAuthorizerConfiguration {
+
+        @Bean
+        MetricPermissionProvider metricPermissionProvider() {
+            return userId -> PermissionScope.empty();
         }
     }
 
