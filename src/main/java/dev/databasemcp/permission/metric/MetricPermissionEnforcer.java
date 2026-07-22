@@ -1,5 +1,7 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
+import dev.databasemcp.permission.SqlAuthorizer;
+import dev.databasemcp.permission.SqlAuthorizationTimeoutException;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -9,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+/** 指标范围授权的 SqlAuthorizer 实现，校验请求范围是否被授权范围覆盖。 */
 @Component
 @ConditionalOnProperty(name = "database-mcp.permission.metric.enabled", havingValue = "true")
 public class MetricPermissionEnforcer implements SqlAuthorizer {
@@ -20,11 +23,11 @@ public class MetricPermissionEnforcer implements SqlAuthorizer {
     private final MetricPermissionProvider provider;
 
     @Autowired
-    MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, ObjectProvider<MetricPermissionProvider> providers) {
+    public MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, ObjectProvider<MetricPermissionProvider> providers) {
         this(inspector, requireSingleProvider(providers));
     }
 
-    MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, MetricPermissionProvider provider) {
+    public MetricPermissionEnforcer(ConservativeMetricSqlInspector inspector, MetricPermissionProvider provider) {
         this.inspector = inspector;
         if (provider == null) {
             throw new IllegalStateException(CONFIGURATION_ERROR);

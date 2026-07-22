@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
+import dev.databasemcp.permission.metric.ConservativeMetricSqlInspector;
+import dev.databasemcp.permission.metric.MetricPermissionEnforcer;
+import dev.databasemcp.permission.metric.MetricPermissionProvider;
+import dev.databasemcp.permission.metric.MetricPermissionProviderTimeoutException;
+import dev.databasemcp.permission.metric.PermissionScope;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;

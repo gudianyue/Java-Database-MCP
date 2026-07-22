@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+/** 内置 HTTP SQL 授权器，将 userId 与 SQL 原样 POST 到外部权限中心按布尔响应决定。 */
 @Component
 @ConditionalOnProperty(name = "database-mcp.permission.http.url")
 class HttpSqlAuthorizer implements SqlAuthorizer {

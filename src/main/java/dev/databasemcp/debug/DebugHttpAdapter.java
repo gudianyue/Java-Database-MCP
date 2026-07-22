@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** 调试用 REST 传输适配器，镜像 9 个 MCP 工具，不含业务逻辑。 */
 // ponytail: 传输适配器——只镜像门面，禁止转换或状态码映射；任何改造都会让 debug 不再等价于 MCP。
 @RestController
 @RequestMapping("/api/debug")

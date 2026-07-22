@@ -6,6 +6,7 @@ import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+/** MySQL 结构方言，基于 information_schema 实现对象查看与 EXPLAIN。 */
 @Component
 public class MySqlDatabaseDialect implements DatabaseDialect {
 

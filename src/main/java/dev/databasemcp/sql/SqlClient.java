@@ -2,6 +2,7 @@ package dev.databasemcp.sql;
 
 import java.util.List;
 
+/** SQL 执行接口，返回 QueryResult。 */
 public interface SqlClient {
 
     QueryResult query(String sql);

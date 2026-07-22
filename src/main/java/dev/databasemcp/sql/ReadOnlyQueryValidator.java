@@ -1,8 +1,8 @@
-package dev.databasemcp.diagnostics;
+package dev.databasemcp.sql;
 
-import dev.databasemcp.sql.SqlTextUtils;
 import java.util.Set;
 
+/** 只读工具的 SQL 校验器，仅允许单条 SELECT。 */
 public final class ReadOnlyQueryValidator {
 
     private static final Set<String> READ_ONLY_QUERY_STARTS = Set.of("select");

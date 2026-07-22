@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
+/** 受限模式 SQL 守卫，按语句类型白名单放行，CREATE 仅允许 EXTENSION。 */
 @Component
 public class RestrictedSqlGuard {
 

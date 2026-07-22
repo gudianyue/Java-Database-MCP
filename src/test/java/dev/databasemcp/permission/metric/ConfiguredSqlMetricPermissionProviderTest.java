@@ -1,4 +1,4 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

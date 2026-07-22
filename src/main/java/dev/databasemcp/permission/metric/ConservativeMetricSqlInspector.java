@@ -1,4 +1,4 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import com.alibaba.druid.DbType;
 import com.alibaba.druid.sql.SQLUtils;
@@ -35,8 +35,9 @@ import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/** 保守的指标 SQL 巡检器，用方言 AST 推导请求范围，不可检查则拒绝。 */
 @Component
-class ConservativeMetricSqlInspector {
+public class ConservativeMetricSqlInspector {
 
     private static final int MAX_SQL_LENGTH = 64 * 1024;
     private static final Pattern UNICODE_QUOTED_IDENTIFIER = Pattern.compile(
@@ -49,7 +50,7 @@ class ConservativeMetricSqlInspector {
     private final DatabaseType databaseType;
 
     @Autowired
-    ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
+    public ConservativeMetricSqlInspector(DatabaseMcpProperties properties) {
         this(
             properties.getDatabaseType(),
             configuredProtectedTables(properties),
@@ -68,7 +69,7 @@ class ConservativeMetricSqlInspector {
         );
     }
 
-    ConservativeMetricSqlInspector(
+    public ConservativeMetricSqlInspector(
         DatabaseType databaseType,
         Set<String> protectedTables,
         Set<String> metricColumns,

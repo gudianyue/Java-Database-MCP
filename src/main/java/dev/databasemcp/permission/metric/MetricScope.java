@@ -1,5 +1,6 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
+/** 指标标识与业务场景组成的不可拆分授权单元。 */
 public record MetricScope(String quotaId, String quotaScene) {
 
     public MetricScope {

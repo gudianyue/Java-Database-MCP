@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.databasemcp.config.DatabaseMcpProperties;
+import dev.databasemcp.permission.metric.ConservativeMetricSqlInspector;
+import dev.databasemcp.permission.metric.MetricPermissionEnforcer;
+import dev.databasemcp.permission.metric.MetricPermissionProvider;
+import dev.databasemcp.permission.metric.PermissionScope;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

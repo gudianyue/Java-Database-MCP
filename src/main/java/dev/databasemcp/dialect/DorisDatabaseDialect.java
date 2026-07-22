@@ -1,7 +1,7 @@
 package dev.databasemcp.dialect;
 
 import dev.databasemcp.config.DatabaseType;
-import dev.databasemcp.diagnostics.ReadOnlyQueryValidator;
+import dev.databasemcp.sql.ReadOnlyQueryValidator;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
+/** Apache Doris 结构方言，独立实现，不继承 MySQL 方言。 */
 @Component
 public class DorisDatabaseDialect implements DatabaseDialect {
 

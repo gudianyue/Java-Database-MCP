@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 
+/** PostgreSQL 扩展与版本探针，检查 hypopg 等扩展是否安装。 */
 @Service
 public class PostgresExtensionService {
 

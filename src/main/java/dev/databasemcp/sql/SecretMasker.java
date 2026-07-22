@@ -2,6 +2,7 @@ package dev.databasemcp.sql;
 
 import java.util.regex.Pattern;
 
+/** 错误信息脱敏器，屏蔽连接串中的口令等敏感字段。 */
 public final class SecretMasker {
 
     private static final Pattern URL_PASSWORD = Pattern.compile(

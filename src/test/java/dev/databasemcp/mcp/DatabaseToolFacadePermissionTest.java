@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import dev.databasemcp.diagnostics.DiagnosticDialect;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
-import dev.databasemcp.diagnostics.ExplainPlanService;
+import dev.databasemcp.explain.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.permission.PermissionDeniedException;
 import dev.databasemcp.permission.PermissionErrorCode;

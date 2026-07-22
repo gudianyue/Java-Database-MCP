@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+/** debug HTTP 启用时校验 server.address 绑定 loopback，拒绝公网暴露。 */
 @Component
 @ConditionalOnProperty(name = "database-mcp.debug.http.enabled", havingValue = "true")
 public class DebugHttpLoopbackGuard {

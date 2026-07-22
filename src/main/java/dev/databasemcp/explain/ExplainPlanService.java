@@ -1,11 +1,13 @@
-package dev.databasemcp.diagnostics;
+package dev.databasemcp.explain;
 
-import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+import static dev.databasemcp.sql.QueryResultRenderSupport.joinRows;
 
 import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.dialect.DatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
+import dev.databasemcp.diagnostics.PostgresExtensionService;
 import dev.databasemcp.sql.QueryResult;
+import dev.databasemcp.sql.ReadOnlyQueryValidator;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import java.util.Locale;
@@ -15,6 +17,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
+/** explain_query 工具的编排器，处理 ANALYZE、HypoPG 假设索引与各方言不支持提示。 */
 @Service
 public class ExplainPlanService {
 

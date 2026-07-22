@@ -1,8 +1,9 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import java.util.Collection;
 import java.util.Set;
 
+/** 某用户被授权的指标范围集合。 */
 public record PermissionScope(Set<MetricScope> scopes) {
 
     public PermissionScope {

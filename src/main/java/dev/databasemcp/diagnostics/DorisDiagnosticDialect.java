@@ -1,8 +1,9 @@
 package dev.databasemcp.diagnostics;
 
-import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+import static dev.databasemcp.sql.QueryResultRenderSupport.joinRows;
 
 import dev.databasemcp.config.DatabaseType;
+import dev.databasemcp.sql.ReadOnlyQueryValidator;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;

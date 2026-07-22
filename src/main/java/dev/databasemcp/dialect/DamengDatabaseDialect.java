@@ -1,12 +1,13 @@
 package dev.databasemcp.dialect;
 
 import dev.databasemcp.config.DatabaseType;
-import dev.databasemcp.diagnostics.ReadOnlyQueryValidator;
+import dev.databasemcp.sql.ReadOnlyQueryValidator;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+/** 达梦结构方言，实现 schema/对象查看与基础 EXPLAIN。 */
 @Component
 public class DamengDatabaseDialect implements DatabaseDialect {
 

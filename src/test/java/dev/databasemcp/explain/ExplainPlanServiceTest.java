@@ -1,4 +1,4 @@
-package dev.databasemcp.diagnostics;
+package dev.databasemcp.explain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -8,6 +8,7 @@ import dev.databasemcp.dialect.DatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.dialect.MySqlDatabaseDialect;
 import dev.databasemcp.dialect.PostgresDatabaseDialect;
+import dev.databasemcp.diagnostics.PostgresExtensionService;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;
 import java.util.ArrayList;

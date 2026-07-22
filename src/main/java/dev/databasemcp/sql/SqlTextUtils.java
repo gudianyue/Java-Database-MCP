@@ -3,6 +3,7 @@ package dev.databasemcp.sql;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+/** SQL 文本处理工具：规范化、首词提取、单语句判定。 */
 public final class SqlTextUtils {
 
     private static final Pattern FIRST_WORD = Pattern.compile("^([a-zA-Z]+)\\b");

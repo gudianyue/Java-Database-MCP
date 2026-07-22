@@ -1,7 +1,7 @@
 package dev.databasemcp.mcp;
 
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
-import dev.databasemcp.diagnostics.ExplainPlanService;
+import dev.databasemcp.explain.ExplainPlanService;
 import dev.databasemcp.dialect.DatabaseDialectProvider;
 import dev.databasemcp.permission.SqlAuthorizationEnforcer;
 import dev.databasemcp.sql.QueryResult;
@@ -13,6 +13,7 @@ import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Service;
 
+/** 所有 MCP 工具的唯一业务门面；SQL 授权、脱敏、受限模式均在此执行。 */
 @Service
 public class DatabaseToolFacade {
 

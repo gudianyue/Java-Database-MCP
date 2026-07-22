@@ -1,5 +1,6 @@
 package dev.databasemcp.config;
 
+/** 支持的数据库类型枚举，作为双层方言路由的注册键。 */
 public enum DatabaseType {
     POSTGRESQL(5432, "jdbc:postgresql://"),
     MYSQL(3306, "jdbc:mysql://"),

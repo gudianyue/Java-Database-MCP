@@ -1,8 +1,9 @@
 package dev.databasemcp.diagnostics;
 
-import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
+import static dev.databasemcp.sql.QueryResultRenderSupport.joinRows;
 
 import dev.databasemcp.config.DatabaseType;
+import dev.databasemcp.sql.ReadOnlyQueryValidator;
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SecretMasker;
 import dev.databasemcp.sql.SqlClient;
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 
+/** 达梦诊断方言，实现慢查询统计、健康检查与索引建议。 */
 @Component
 public class DamengDiagnosticDialect implements DiagnosticDialect {
 

@@ -1,7 +1,8 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import java.util.Set;
 
+/** 指标 SQL 巡检结果，含是否命中受保护资源与派生的请求范围。 */
 record MetricSqlInspection(Status status, Set<MetricScope> metricScopes) {
 
     MetricSqlInspection {

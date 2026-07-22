@@ -7,7 +7,7 @@ import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.config.DatabaseType;
 import dev.databasemcp.diagnostics.DamengDiagnosticDialect;
 import dev.databasemcp.diagnostics.DiagnosticDialectProvider;
-import dev.databasemcp.diagnostics.ExplainPlanService;
+import dev.databasemcp.explain.ExplainPlanService;
 import dev.databasemcp.diagnostics.PostgresExtensionService;
 import dev.databasemcp.dialect.DamengDatabaseDialect;
 import dev.databasemcp.dialect.DatabaseDialectProvider;

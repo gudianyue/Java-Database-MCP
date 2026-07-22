@@ -9,6 +9,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+/** SQL 授权执行器，授权通过才放行，失败/超时/拒绝统一映射为 PermissionDeniedException。 */
 @Component
 public class SqlAuthorizationEnforcer {
 

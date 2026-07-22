@@ -1,14 +1,14 @@
 package dev.databasemcp.diagnostics;
 
-import static dev.databasemcp.diagnostics.DiagnosticSupport.firstValue;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.isSelect;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.joinRows;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.megabytes;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.number;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.qualified;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.round;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
+import static dev.databasemcp.sql.QueryResultRenderSupport.firstValue;
+import static dev.databasemcp.sql.QueryResultRenderSupport.isSelect;
+import static dev.databasemcp.sql.QueryResultRenderSupport.joinRows;
+import static dev.databasemcp.sql.QueryResultRenderSupport.megabytes;
+import static dev.databasemcp.sql.QueryResultRenderSupport.number;
+import static dev.databasemcp.sql.QueryResultRenderSupport.qualified;
+import static dev.databasemcp.sql.QueryResultRenderSupport.round;
+import static dev.databasemcp.sql.QueryResultRenderSupport.singleLong;
+import static dev.databasemcp.sql.QueryResultRenderSupport.truthy;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;

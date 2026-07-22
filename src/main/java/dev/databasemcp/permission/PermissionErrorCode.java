@@ -1,5 +1,6 @@
 package dev.databasemcp.permission;
 
+/** SQL 授权对外错误码，屏蔽内部细分原因。 */
 public enum PermissionErrorCode {
     PERMISSION_DENIED("permission_denied"),
     PERMISSION_CONTEXT_MISSING("permission_context_missing"),

@@ -1,8 +1,8 @@
 package dev.databasemcp.diagnostics;
 
-import static dev.databasemcp.diagnostics.DiagnosticSupport.firstValue;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.singleLong;
-import static dev.databasemcp.diagnostics.DiagnosticSupport.truthy;
+import static dev.databasemcp.sql.QueryResultRenderSupport.firstValue;
+import static dev.databasemcp.sql.QueryResultRenderSupport.singleLong;
+import static dev.databasemcp.sql.QueryResultRenderSupport.truthy;
 
 import dev.databasemcp.sql.QueryResult;
 import dev.databasemcp.sql.SqlClient;

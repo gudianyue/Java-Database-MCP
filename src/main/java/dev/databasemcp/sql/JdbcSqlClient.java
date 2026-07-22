@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+/** 基于 HikariCP 的 SqlClient 实现，按访问模式执行只读或 unrestricted SQL。 */
 @Component
 public class JdbcSqlClient implements SqlClient, AutoCloseable {
 

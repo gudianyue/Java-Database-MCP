@@ -4,6 +4,7 @@ import dev.databasemcp.config.DatabaseMcpProperties;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+/** 按 database-mcp.database-type 选择当前结构方言的 Provider。 */
 @Component
 public class DatabaseDialectProvider {
 

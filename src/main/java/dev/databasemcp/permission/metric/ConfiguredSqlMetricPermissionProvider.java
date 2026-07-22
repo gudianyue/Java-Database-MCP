@@ -1,4 +1,4 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import dev.databasemcp.config.DatabaseMcpProperties;
 import dev.databasemcp.sql.QueryResult;
@@ -17,6 +17,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+/** 内置指标权限 Provider，执行配置的授权查询返回用户授权范围。 */
 @Component
 @ConditionalOnProperty(name = "database-mcp.permission.metric.provider.authorization-query")
 class ConfiguredSqlMetricPermissionProvider implements MetricPermissionProvider {

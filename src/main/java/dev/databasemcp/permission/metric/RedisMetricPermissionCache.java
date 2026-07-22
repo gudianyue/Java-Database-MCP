@@ -1,4 +1,4 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,6 +16,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+/** 指标授权范围的 Redis 缓存，按 user_id 摘要键缓存 Provider 返回的授权范围。 */
 @Component
 @ConditionalOnProperty(
     name = "database-mcp.permission.metric.provider.cache.enabled",

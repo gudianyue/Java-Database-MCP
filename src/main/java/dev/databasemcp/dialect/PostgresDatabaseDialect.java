@@ -6,6 +6,7 @@ import dev.databasemcp.sql.SqlClient;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+/** PostgreSQL 结构方言，基于 pg_catalog 实现对象查看与 EXPLAIN。 */
 @Component
 public class PostgresDatabaseDialect implements DatabaseDialect {
 

@@ -1,9 +1,10 @@
-package dev.databasemcp.permission;
+package dev.databasemcp.permission.metric;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.databasemcp.config.DatabaseType;
+import dev.databasemcp.permission.SqlAuthorizationTimeoutException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;

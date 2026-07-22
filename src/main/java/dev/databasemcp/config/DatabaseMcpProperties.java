@@ -8,6 +8,7 @@ import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.StringUtils;
 
+/** database-mcp 前缀的配置绑定，含数据库连接、访问模式与权限子配置。 */
 @ConfigurationProperties(prefix = "database-mcp")
 public class DatabaseMcpProperties {
 
