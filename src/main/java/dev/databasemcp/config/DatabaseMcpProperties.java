@@ -21,6 +21,7 @@ public class DatabaseMcpProperties {
     private int restrictedTimeoutSeconds = 30;
     private int maximumPoolSize = 5;
     private PermissionProperties permission = new PermissionProperties();
+    private DebugProperties debug = new DebugProperties();
 
     public String getDatabaseUri() {
         return databaseUri;
@@ -121,6 +122,14 @@ public class DatabaseMcpProperties {
 
     public void setPermission(PermissionProperties permission) {
         this.permission = permission == null ? new PermissionProperties() : permission;
+    }
+
+    public DebugProperties getDebug() {
+        return debug;
+    }
+
+    public void setDebug(DebugProperties debug) {
+        this.debug = debug == null ? new DebugProperties() : debug;
     }
 
     private static boolean hasText(String value) {
@@ -308,6 +317,32 @@ public class DatabaseMcpProperties {
 
         public void setKeyPrefix(String keyPrefix) {
             this.keyPrefix = keyPrefix;
+        }
+    }
+
+    public static class DebugProperties {
+
+        private Http http = new Http();
+
+        public Http getHttp() {
+            return http;
+        }
+
+        public void setHttp(Http http) {
+            this.http = http == null ? new Http() : http;
+        }
+
+        public static class Http {
+
+            private boolean enabled;
+
+            public boolean isEnabled() {
+                return enabled;
+            }
+
+            public void setEnabled(boolean enabled) {
+                this.enabled = enabled;
+            }
         }
     }
 }
