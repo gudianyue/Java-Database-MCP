@@ -19,7 +19,16 @@ CLAUDE.md
 .codegraph
 .scratch
 .agents
+AGENTS.md
 /docs/adr/
 /docs/diagrams/
 /docs/specs/
+/docs/agents/
+/docs/compatibility.md
+/docs/permission-control.md
 /.scratch/remove-llm-entrypoints/
+CONTEXT.md
+
+# 改造过程文档与中间记录（本地保留，不提交）
+指标权限控制*.txt
+指标权限控制*.md
