@@ -57,18 +57,7 @@ SqlAuthorizer sqlAuthorizer() {
 
 非 Java 权限系统可配置 `database-mcp.permission.http.url` 使用内置 HTTP 授权器。它以 POST JSON 原样发送 `userId` 与 SQL，接受 2xx 且正文只含布尔 `allowed` 的响应；静态认证请求头和默认 3 秒总超时由服务端配置提供，不重试、不缓存，也不会把请求头或远端响应正文写入日志。HTTP、指标和自定义授权器不能同时启用。
 
-现有“Druid AST + 指标范围 Provider”能力继续作为内置 `SqlAuthorizer` 使用：启用 `database-mcp.permission.metric.enabled` 后，从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围并与 Provider 返回的授权范围比较；未启用指标实现时，通用核心不解释任何指标语义。指标 SQL 无法检查或范围不足统一返回 `permission_denied`，Provider 超时与其他故障分别返回 `permission_authorizer_timeout`、`permission_authorizer_unavailable`；细分原因只进入服务端诊断日志。
-
-请求示例：
-
-```json
-{
-  "sql": "SELECT quota_value FROM gkschema.gk_qta_data WHERE quota_id = 'Q001' AND quota_scene = 'monthly'",
-  "user_id": "zhangsan"
-}
-```
-
-通用授权契约、指标安全 SQL 写法、Provider 与缓存配置、错误码说明见 [docs/permission-control.md](docs/permission-control.md)。
+现有“Druid AST + 指标范围 Provider”能力继续作为内置 `SqlAuthorizer` 使用：启用 `database-mcp.permission.metric.enabled` 后，从 SQL 的 `quota_id` / `quota_scene` 条件派生请求范围并与 Provider 返回的授权范围比较；未启用指标实现时，通用核心不解释任何指标语义。指标 SQL 无法检查或范围不足统一返回 `permission_denied`，Provider 超时与其他故障分别返回 `permission_authorizer_timeout`、`permission_authorizer_unavailable`；细分原因只进入服务端诊断日志。指标实现的受保护表、指标列、场景列、Provider 查询与缓存配置项见 `application.yml` 内的注释示例。
 
 ## MCP 传输
 
@@ -94,6 +83,18 @@ SERVER_PORT=8000
 ```
 
 本项目不内置 MCP 入口身份认证。公开网络访问时，应放在具备身份认证和访问控制能力的反向代理或网关之后。SQL 授权依赖 Agent 或网关先完成用户认证，并把真实用户可信绑定到每次请求的 `user_id`；本项目只把该不透明标识原样交给授权器。
+
+## 调试 REST 适配器
+
+除标准 MCP 传输外，仓库提供镜像 9 个 MCP 工具的 REST 适配器 `DebugHttpAdapter`，路径前缀 `/api/debug`（如 `POST /api/debug/execute_sql`），请求体为对应工具参数的 JSON，响应固定为 `{"output": "..."}`。它不含任何业务逻辑，仅直接转发到 `DatabaseToolFacade`，便于在没有 MCP Client 时用 `curl` / Postman 排查问题。
+
+默认关闭，需显式启用：
+
+```bash
+DATABASE_MCP_DEBUG_HTTP_ENABLED=true
+```
+
+该适配器**仅用于本地调试**，不替代 MCP 传输，也不应暴露到生产网络；启用后同样遵循 `SERVER_ADDRESS` 绑定范围，公网暴露需放反代/网关后。
 
 ## 数据库连接
 
@@ -304,7 +305,7 @@ mvn -DskipTests package
 
 ## 兼容性说明
 
-不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL、MySQL、达梦数据库和 Apache Doris 分别实现诊断逻辑；细节边界和前置条件见 [docs/compatibility.md](docs/compatibility.md)。
+不同数据库的系统视图、执行计划格式和诊断指标并不完全等价。项目通过 `DiagnosticDialect` 为 PostgreSQL、MySQL、达梦数据库和 Apache Doris 分别实现诊断逻辑；各数据库支持的工具范围、健康检查类型、索引建议方式和不支持项的差异已在上方“支持范围”章节逐库列出。
 
 ## 第三方来源
 
