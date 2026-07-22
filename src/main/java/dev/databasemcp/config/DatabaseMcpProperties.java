@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.StringUtils;
 
 @ConfigurationProperties(prefix = "database-mcp")
 public class DatabaseMcpProperties {
@@ -21,7 +22,6 @@ public class DatabaseMcpProperties {
     private int restrictedTimeoutSeconds = 30;
     private int maximumPoolSize = 5;
     private PermissionProperties permission = new PermissionProperties();
-    private DebugProperties debug = new DebugProperties();
 
     public String getDatabaseUri() {
         return databaseUri;
@@ -33,12 +33,12 @@ public class DatabaseMcpProperties {
 
     public String resolvedJdbcUrl() {
         String uri = getDatabaseUri();
-        if (hasText(uri)) {
+        if (StringUtils.hasText(uri)) {
             return uri;
         }
         String host = getDatabaseHost();
         String database = getDatabaseName();
-        if (!hasText(host) || !hasText(database)) {
+        if (!StringUtils.hasText(host) || !StringUtils.hasText(database)) {
             return "";
         }
         return databaseType.jdbcPrefix() + host + ":" + getDatabasePort() + "/" + database;
@@ -122,18 +122,6 @@ public class DatabaseMcpProperties {
 
     public void setPermission(PermissionProperties permission) {
         this.permission = permission == null ? new PermissionProperties() : permission;
-    }
-
-    public DebugProperties getDebug() {
-        return debug;
-    }
-
-    public void setDebug(DebugProperties debug) {
-        this.debug = debug == null ? new DebugProperties() : debug;
-    }
-
-    private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 
     public static class PermissionProperties {
@@ -317,32 +305,6 @@ public class DatabaseMcpProperties {
 
         public void setKeyPrefix(String keyPrefix) {
             this.keyPrefix = keyPrefix;
-        }
-    }
-
-    public static class DebugProperties {
-
-        private Http http = new Http();
-
-        public Http getHttp() {
-            return http;
-        }
-
-        public void setHttp(Http http) {
-            this.http = http == null ? new Http() : http;
-        }
-
-        public static class Http {
-
-            private boolean enabled;
-
-            public boolean isEnabled() {
-                return enabled;
-            }
-
-            public void setEnabled(boolean enabled) {
-                this.enabled = enabled;
-            }
         }
     }
 }
